@@ -1,12 +1,12 @@
 # 공통 인터페이스 정의 (Interfaces)
 
-> 이 문서는 팀 전체가 공유하는 **토픽 이름, 메시지 타입, 좌표계, 단위**의 기준이다.
-> 코드와 이 문서가 다르면 **이 문서를 먼저 고치고(PR + 리뷰) 코드를 맞춘다.**
+> 이 문서는 팀 전체가 공유하는 토픽 이름, 메시지 타입, 좌표계, 단위의 기준이다.
+> 코드와 이 문서가 다르면 이 문서를 먼저 고치고(PR + 리뷰) 코드를 맞춘다.
 
-- 담당: A (공통 인터페이스 · 내비게이션)
-- 상태: 초안 (v0.6)
+- 담당: A (공통 인터페이스 · 내비게이션 · 상태머신)
+- 상태: 초안 (v0.7)
 - `TBD` = 아직 미정. 남은 항목은 6장 체크리스트 참고.
-- 본 프로젝트는 **시뮬레이션(소프트웨어)만** 다룬다.
+- 본 프로젝트는 시뮬레이션(소프트웨어)만 다룬다.
 
 ### 담당 구분 (문서 안의 A~D 표기)
 
@@ -27,10 +27,18 @@
 | ROS2 | Humble |
 | 시뮬레이터 | Gazebo Fortress (`ign gazebo`) |
 | Python | 3.10 |
-| 로봇팔 모델 | **DOFBOT (확정)** — `dofbot_original_pos.urdf` (1자 기본 자세 버전), 회전 관절 5개 + 그리퍼 서보 1개. 팀원 실물 구현 경험 있음 |
-| 모바일 베이스 모델 | **직접 제작한 차동구동 차체 (확정)**. TurtleBot3는 Humble에서 Gazebo Classic 전용이라 사용 불가. TurtleBot4는 센서가 많아 무거움: RTF Mac VM 약 10~20%, **Windows PC 12.5%** (PR #1 댓글 참고) |
+| 로봇팔 모델 | DOFBOT (확정) — `dofbot_original_pos.urdf` (1자 기본 자세 버전), 회전 관절 5개 + 그리퍼 서보 1개. 팀원 실물 구현 경험 있음 |
+| 모바일 베이스 모델 | 직접 제작한 차동구동 차체 (확정). 패키지 `mm_description` (`feat/navigation` 브랜치), 차체 40×30×10 cm · 바퀴 반지름 5 cm · 바퀴 간격 35 cm (임시값, 팔 장착 시 조정). TurtleBot3는 Humble에서 Gazebo Classic 전용이라 사용 불가. TurtleBot4는 센서가 많아 무거움: RTF Mac VM 약 10~20%, Windows PC 12.5% (PR #1 댓글 참고) |
 
-> 참고: 이전에 받은 `dofbot_initialposition.urdf`(ㄷ자 자세 버전)는 링크 간 간섭이 생기는 각도 범위가 설정돼 있어 **사용하지 않는다.**
+> 참고: 이전에 받은 `dofbot_initialposition.urdf`(ㄷ자 자세 버전)는 링크 간 간섭이 생기는 각도 범위가 설정돼 있어 사용하지 않는다.
+
+> 렌더링 참고 (환경별)
+> - Mac UTM VM: 기본 엔진(ogre2)이 튕겨서 `--render-engine ogre` 사용
+>   - GPU 가속(virgl) 상태에서는 라이다 거리값이 전부 최소값(0.12 m)으로 나옴 → 라이다를 쓰려면 CPU 렌더링(`software_gl:=true`) 필요 (2026-11-03 확인). 이때 Gazebo 화면을 켜면 RTF 약 71~76%, 화면 없이(`headless:=true`) 실행하고 RViz로 보면 약 99.7%
+> - Windows + WSL2 (C 노트북): ogre2로 실행하면 Segmentation fault → `LIBGL_ALWAYS_SOFTWARE=1 ign gazebo ... --render-engine ogre`로 실행. 이 경우 카메라도 CPU로 렌더링돼서 RTF가 더 낮을 수 있음
+> - 공용 launch 파일(`mm_description/launch/sim.launch.py`) 옵션: `software_gl:=true`(CPU 렌더링), `headless:=true`(Gazebo 화면 없이), `rviz:=false`(RViz 끄기), `render_engine`(기본 ogre)
+>   - Mac UTM VM: `ros2 launch mm_description sim.launch.py software_gl:=true headless:=true`
+>   - WSL2: `ros2 launch mm_description sim.launch.py software_gl:=true`
 
 ---
 
@@ -45,9 +53,11 @@
 | 시간 | s |
 | 선속도 / 각속도 | m/s, rad/s |
 | 이미지 좌표 | px (좌상단 원점, u: 오른쪽, v: 아래) |
-| 깊이 이미지 | m (`32FC1`) — TBD: 카메라 플러그인 출력 형식 확인 |
+| 깊이 이미지 | m (`32FC1`) — TBD: 카메라 플러그인 출력 형식 확인 (C) |
 
-- 메시지 안의 회전은 **쿼터니언**으로 표현한다. roll/pitch/yaw는 설정 파일·문서에서만 쓴다.
+- 깊이 이미지가 `32FC1`이면, 측정 범위를 벗어난 픽셀은 `inf`/`NaN`으로 나오므로 이 값은 계산에서 무시한다 (C 제안).
+
+- 메시지 안의 회전은 쿼터니언으로 표현한다. roll/pitch/yaw는 설정 파일·문서에서만 쓴다.
 
 ### 1.2 좌표축 방향
 
@@ -56,7 +66,7 @@
 | 로봇 본체 프레임 (REP 103) | 앞 | 왼쪽 | 위 |
 | 카메라 optical 프레임 | 오른쪽 | 아래 | 앞(시선 방향) |
 
-> ⚠️ 카메라 이미지 기반 계산(검출, visual servoing)은 **optical 프레임** 기준이다. 일반 카메라 프레임과 혼동 주의.
+> ⚠️ 카메라 이미지 기반 계산(검출, visual servoing)은 optical 프레임 기준이다. 일반 카메라 프레임과 혼동 주의.
 
 ### 1.3 시간
 
@@ -93,7 +103,7 @@ map
                                          └─ ee_link   (그리퍼 끝점, TCP)
 ```
 
-> ⚠️ DOFBOT 원본 URDF는 시작 링크 이름이 `base_link`다. 모바일 베이스의 `base_link`와 충돌하므로 **`arm_base_link`로 이름을 바꿔서 사용한다.**
+> ⚠️ DOFBOT 원본 URDF는 시작 링크 이름이 `base_link`다. 모바일 베이스의 `base_link`와 충돌하므로 `arm_base_link`로 이름을 바꿔서 사용한다.
 > `base_link → arm_base_link` 연결(팔 장착 위치)은 고정 관절(fixed)로 추가하며, 위치 값은 TBD.
 
 ### 2.2 프레임 목록
@@ -105,6 +115,7 @@ map
 | 바닥 기준 | `base_footprint` | 확정 (직접 제작 차체에서 이 이름 사용) | robot_state_publisher |
 | 로봇 기준 | `base_link` | 확정 (직접 제작 차체에서 이 이름 사용) | robot_state_publisher |
 | 라이다 | `base_scan` | 확정 (직접 제작 차체에서 이 이름 사용) | robot_state_publisher |
+| 바퀴 · 캐스터 | `left_wheel_link`, `right_wheel_link`, `front_caster_link`, `rear_caster_link` | 확정 (`mm_description`) | robot_state_publisher |
 | 카메라 | `camera_link` | 위치 확정 (`link5` 위쪽), 장착 오프셋 값 TBD | robot_state_publisher |
 | 카메라 optical | `camera_optical_frame` | 이름 확정 | robot_state_publisher |
 | 팔 베이스 | `arm_base_link` | 확정 (원본 `base_link`에서 변경) | robot_state_publisher |
@@ -148,17 +159,47 @@ map
 
 | 토픽 | 메시지 타입 | 발행 | 구독 | frame_id | 비고 |
 |---|---|---|---|---|---|
-| `/scan` | `sensor_msgs/msg/LaserScan` | 시뮬 | A | `base_scan` | 라이다 |
-| `/odom` | `nav_msgs/msg/Odometry` | 시뮬 | A | `odom` | |
+| `/clock` | `rosgraph_msgs/msg/Clock` | 시뮬 | 전체 | — | 시뮬 시간 (`use_sim_time: true`) |
+| `/scan` | `sensor_msgs/msg/LaserScan` | 시뮬 | A | `base_scan` | 라이다. 10 Hz, 360개(1° 간격), 0.12~8 m |
+| `/odom` | `nav_msgs/msg/Odometry` | 시뮬 | A | `odom` | 차동구동 플러그인이 발행. `odom → base_footprint` TF도 함께 발행 |
 | `/cmd_vel` | `geometry_msgs/msg/Twist` | 상태머신(A)이 선택한 쪽 | 시뮬 (차체) | — | 차체 속도. 이동 중엔 Nav2, 정렬 중엔 D의 명령을 전달 (5.0 참고) |
-| `/nav2/cmd_vel` | `geometry_msgs/msg/Twist` | A (Nav2) | 상태머신 | — | Nav2 출력 (제안: Nav2 출력 토픽을 이 이름으로 리매핑) |
+| `/nav2/cmd_vel` | `geometry_msgs/msg/Twist` | A (Nav2) | 상태머신 | — | Nav2 최종 출력. velocity_smoother 출력(`cmd_vel_smoothed`)을 이 이름으로 리매핑 (3.1 참고) |
 | `/camera/image_raw` | `sensor_msgs/msg/Image` | 시뮬 | C, D | `camera_optical_frame` | RGB 이미지. 시뮬 플러그인에서 이 이름으로 설정 |
-| `/camera/depth/image_raw` | `sensor_msgs/msg/Image` | 시뮬 | C | `camera_optical_frame` | 깊이 이미지 (RGB-D 카메라) |
+| `/camera/depth/image_raw` | `sensor_msgs/msg/Image` | 시뮬 | C, D | `camera_optical_frame` | 깊이 이미지 (RGB-D 카메라). D는 정렬 거리 계산에 사용 |
 | `/camera/camera_info` | `sensor_msgs/msg/CameraInfo` | 시뮬 | C, D | `camera_optical_frame` | 카메라 내부 파라미터 |
 | `/perception/detections` | `vision_msgs/msg/Detection2DArray` | C | D, A | `camera_optical_frame` | YOLO 결과 (px) |
-| `/perception/target_pose` | `geometry_msgs/msg/PoseStamped` | C | A, D, B | `base_link` | 목표 물체 3D 위치 |
+| `/perception/target_pose` | `geometry_msgs/msg/PoseStamped` | C | A, D, B | `base_link` | 목표 물체 3D 위치 (3.3 참고) |
 | `/joint_states` | `sensor_msgs/msg/JointState` | 시뮬 / ros2_control | B, D | — | |
 | `/servoing/cmd_vel` | `geometry_msgs/msg/Twist` | D | 상태머신 | — | 베이스 미세 정렬용 차체 속도 명령 (팔은 고정) |
+| `/perception/target_class` | `std_msgs/msg/String` | 상태머신(A) | C | — | 이번에 잡을 물체 클래스 이름. QoS `transient_local` (나중에 켜진 노드도 마지막 값 수신) |
+
+### 3.1 Nav2 속도 명령 흐름 (Humble `nav2_bringup` 확인)
+
+```
+controller_server → cmd_vel_nav → velocity_smoother → (기본) /cmd_vel
+                                                   → (우리) /nav2/cmd_vel → 상태머신 → /cmd_vel
+```
+
+- 기본 `navigation_launch.py`는 controller_server 출력을 `cmd_vel_nav`로, velocity_smoother 출력(`cmd_vel_smoothed`)을 `cmd_vel`로 리매핑한다.
+- 우리 launch 파일에서는 velocity_smoother 출력만 `/nav2/cmd_vel`로 바꾼다. controller_server 쪽 리매핑은 그대로 둔다.
+- 확인 (2026-11-03): velocity_smoother를 단독 실행하고 `-r cmd_vel:=cmd_vel_nav -r cmd_vel_smoothed:=/nav2/cmd_vel`로 리매핑한 뒤 configure → `/nav2/cmd_vel` Publisher 1, `/cmd_vel_nav` Subscription 1 확인
+
+### 3.2 `/perception/detections` 필드 규칙 (C 제안)
+
+| 필드 | 규칙 |
+|---|---|
+| `results[0].hypothesis.class_id` | 클래스 이름 문자열 (예: `bolt`) |
+| `results[0].hypothesis.score` | 0 ~ 1 |
+| `bbox.center.position.x/y`, `bbox.size_x/size_y` | px |
+| `header.stamp` | 처리 시각이 아니라 원본 이미지의 stamp를 그대로 복사 |
+
+- 물체가 안 보이는 프레임에도 빈 배열을 발행한다. 받는 쪽이 "검출 없음"과 "노드 멈춤"을 구분할 수 있게 하기 위함.
+
+### 3.3 `/perception/target_pose` 규칙 (C 제안)
+
+- orientation은 당분간 위치만 채우고 단위 쿼터니언(회전 없음)으로 둔다. B가 물체 방향(yaw)이 필요하면 C에게 요청.
+- 카메라가 팔(`link5`)에 달려 있으므로, `camera_optical_frame` → `base_link` 변환은 이미지 stamp 시점의 TF로 계산한다.
+- C는 `/perception/target_class`로 받은 클래스의 물체만 `target_pose`로 발행한다. 클래스 이름은 `Align`의 `target_class`와 같은 문자열을 쓴다.
 
 ---
 
@@ -167,8 +208,8 @@ map
 | 이름 | 타입 | 서버 | 클라이언트 | 비고 |
 |---|---|---|---|---|
 | `/navigate_to_pose` | `nav2_msgs/action/NavigateToPose` | A (Nav2) | 상태머신 | Nav2 표준 |
-| `/servoing/align` | `project_interfaces/action/Align` (예정) | D | 상태머신 | 커스텀, 필드는 4.1 참고 |
-| `/grasp/execute` | `project_interfaces/action/Grasp` (예정) | B | 상태머신 | 커스텀, 정의 TBD |
+| `/servoing/align` | `project_interfaces/action/Align` (예정) | D | 상태머신 | 베이스 미세 정렬 (팔 고정). 필드는 4.1 참고 |
+| `/grasp/execute` | `project_interfaces/action/Grasp` (예정) | B | 상태머신 | IK 검증 및 로봇팔 이동·파지. 필드는 4.2 참고 |
 | `/gripper_controller/gripper_cmd` | `control_msgs/action/GripperCommand` | 그리퍼 컨트롤러 | B | ros2_control 그리퍼 컨트롤러 이름을 `gripper_controller`로 설정 |
 
 > 표준 메시지로 표현 가능한 건 표준을 쓴다. `project_interfaces` 패키지는 위 커스텀 액션이 확정될 때 만든다.
@@ -183,7 +224,7 @@ float64 timeout_sec        # 제한 시간 (s)
 ---
 # Result
 bool success
-string error_code          # 실패 시 5.2 실패 코드 중 하나 (제안)
+string error_code          # 실패 시 5.3 실패 코드 이름, 성공 시 빈 문자열
 float64 final_range_error_m
 float64 final_bearing_error_rad
 ---
@@ -193,11 +234,24 @@ float64 range_error_m
 float64 bearing_error_rad
 ```
 
-- 거리·방위 오차의 기준 좌표계: TBD (`base_link` 또는 `camera_optical_frame`, D 확인 필요)
+- 거리·방위 오차의 기준 좌표계: `base_link` (D 확정)
+- `standoff_m`: `base_link` 원점에서 물체까지의 거리
+- `error_code`: 5.3 표의 이름을 그대로 사용. 정렬 중 물체를 놓친 경우에도 `OBJECT_NOT_FOUND` 반환
 
-### 4.2 `Grasp` 액션
+### 4.2 `Grasp` 액션 (B 제안)
 
-- 필드 TBD (B)
+| 구분 | 필드 | 의미 |
+|---|---|---|
+| Goal | `target_id` | 파지 대상 식별 |
+| Goal | `grasp_pose` | 목표 파지 위치·자세 |
+| Result | `success` | 파지 성공 여부 |
+| Result | `error_code` | 실패 원인 (`IK_FAILED` 등, 5.3 참고) |
+| Feedback | `phase` | 현재 진행 단계 (`IK_CHECK`, `APPROACH`, `GRIP` 등) |
+
+- 각 필드의 메시지 타입은 TBD (B)
+- `target_id`가 YOLO 클래스 이름(`target_class`)과 같은 값인지, 별도 식별자인지 확인 필요 (B)
+- `grasp_pose`를 누가 만들고 어떻게 전달할지는 인식(C)·정렬(D) 모듈과 연계해 추후 결정
+- IK 실패 시 B가 `IK_FAILED`를 반환하고, 상태머신이 `/servoing/align`을 다시 호출한다
 
 ---
 
@@ -205,37 +259,58 @@ float64 bearing_error_rad
 
 ### 5.0 작업 흐름과 차체 명령 선택
 
-정렬은 **팔을 고정하고 차체만 움직이는 베이스 미세 정렬** 방식이다. MoveIt Servo는 사용하지 않는다.
+정렬은 팔을 고정하고 차체만 움직이는 베이스 미세 정렬 방식이다. MoveIt Servo는 사용하지 않는다.
 
 ```
 Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(B) → 파지(B)
                                   ↑                    │
-                                  └──── IK 실패 시 재정렬 ┘
+                                  └── IK 실패 시 재정렬 (최대 2회, 5.2) ┘
 ```
 
-- 차체 속도 명령은 Nav2와 정렬(D) 두 곳에서 나오므로, **상태머신(A)이 현재 단계에 맞는 명령만 `/cmd_vel`로 전달**한다 (제안, 구현 방식 TBD)
+- 차체 속도 명령은 Nav2와 정렬(D) 두 곳에서 나오므로, 상태머신(A)이 현재 단계에 맞는 명령만 `/cmd_vel`로 전달한다.
+- Nav2와 정렬(D)이 동시에 차체를 제어하지 않는다 (B 의견).
+
+| 상태머신 단계 | `/cmd_vel`로 전달하는 명령 |
+|---|---|
+| 이동 (Nav2) | `/nav2/cmd_vel` |
+| 정렬 (D) | `/servoing/cmd_vel` |
+| 그 외 (IK 확인, 파지, 대기 등) | 속도 0 |
+
+- twist_mux 같은 별도 패키지는 쓰지 않고 상태머신 노드 안에서 직접 선택한다.
 
 ### 5.1 정렬(D) → 파지(B) 전환 조건 (D 제안 초안)
 
-- 방위 오차: **0.05 rad 이하**
-- 거리 오차: **0.02 m 이하**
-- 차체 정지 후 촬영한 프레임 **3장 연속**으로 위 조건을 만족하면 정렬 완료
+- 방위 오차: 0.05 rad 이하
+- 거리 오차: 0.02 m 이하
+- 차체 정지 후 촬영한 프레임 3장 연속으로 위 조건을 만족하면 정렬 완료
 - 이후 B의 IK 결과로 실제로 잡을 수 있는 자세인지 확인하고, IK가 풀리지 않으면 다시 정렬한다 (B, D 의견 반영)
 - 임계값은 그리퍼 크기 확정 후 B, D가 함께 조정
+- 거리 오차 조건은 C의 bbox 흔들림과 깊이 추정 오차에 영향을 받는다. C가 첫 학습 후 정지 상태에서 위치 추정값의 흔들림 폭을 측정해 공유하고, 그 값을 보고 함께 조정한다
 
-### 5.2 실패 코드
+### 5.2 IK 실패 후 재정렬 (D 제안 반영)
+
+- 같은 `standoff_m`으로 재정렬하면 같은 위치로 돌아와 반복 실패할 수 있으므로, 재시도할 때마다 `standoff_m`을 바꾼다.
+- 재시도는 최대 2회 (처음 시도 포함 총 3회).
+- 3회 모두 실패하면 해당 물체는 `IK_FAILED`로 최종 실패 처리한다.
+- 재정렬은 상태머신(A)이 `Align` Goal의 `standoff_m`만 바꿔서 `/servoing/align`을 다시 호출하는 방식이다.
+- 시도별 `standoff_m` 값은 TBD: DOFBOT 팔이 닿는 범위를 B가 확인한 뒤 정한다.
+
+### 5.3 실패 코드
 
 실패 원인을 같은 형식으로 기록해 두면 나중에 성능 분석과 LLM 실패 원인 추정에 그대로 쓸 수 있다.
 
 | 코드 | 의미 | 발생 모듈 |
 |---|---|---|
 | `NAV_FAILED` | 목표 지점 도착 실패 | A |
-| `OBJECT_NOT_FOUND` | 물체 미검출 | C |
+| `OBJECT_NOT_FOUND` | 물체 미검출 (정렬 중 물체를 놓친 경우 포함) | C, D |
 | `ALIGN_TIMEOUT` | 제한 시간 내 정렬 실패 | D |
 | `IK_FAILED` | 정렬 후 IK가 풀리지 않음 (재정렬 대상) | B |
 | `GRASP_MISS` | 그리퍼가 물체를 못 잡음 | B |
 | `GRASP_SLIP` | 잡은 뒤 놓침 | B |
 | `UNKNOWN` | 기타 | — |
+
+- `OBJECT_NOT_FOUND` 판정 기준 (C 제안): score 0.5 이상인 목표 클래스 검출이 연속 N프레임(예: 10프레임) 동안 없으면 발생. 수치는 첫 모델 학습 후 조정
+- B가 제안한 `GRASP_FAILED`는 위 표의 `GRASP_MISS` / `GRASP_SLIP`과 같은 뜻인지 확인 필요 (B)
 
 ---
 
@@ -252,21 +327,32 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - [x] `base_link.STL` → 팀원 제공
 - [x] joint2, joint4 범위 → 1자 버전 URDF로 교체해서 해결
 - [x] 시뮬 카메라 토픽 이름 → `/camera/...`로 확정
-- [ ] 깊이 이미지 형식 (`32FC1` 여부) — 카메라 플러그인 실행 후 확인
+- [ ] 깊이 이미지 형식 (`32FC1` 여부) — 카메라 플러그인 실행 후 확인 (C)
 - [x] visual servoing 제어 방식 → 베이스 미세 정렬, MoveIt Servo 미사용
 - [x] `Align` 액션 필드 → D 제안 반영 (4.1)
-- [ ] `Align` 오차 기준 좌표계 (D)
-- [ ] `Grasp` 액션 필드 (B)
+- [x] `Align` 오차 기준 좌표계 → `base_link` (D)
+- [x] `Grasp` 액션 필드 → B 제안 반영 (4.2), 필드별 메시지 타입은 TBD (B)
+- [ ] `grasp_pose` 생성 · 전달 방식 (B, C, D)
 - [x] 5.1 전환 조건 → D 제안 초안 반영, 그리퍼 확정 후 조정
-- [ ] 차체 명령 선택 방식 (상태머신, A)
+- [x] 차체 명령 선택 방식 → 상태머신이 단계별로 직접 선택 (5.0)
+- [x] IK 실패 후 재정렬 방식 → 최대 2회 재시도, 시도마다 `standoff_m` 변경 (5.2)
+- [ ] 재시도별 `standoff_m` 값 (B) — 팔이 닿는 범위 확인 후
+- [ ] `Grasp` 필드별 메시지 타입, `target_id` 의미, `GRASP_FAILED`와 `GRASP_MISS`/`GRASP_SLIP` 관계 (B)
+- [ ] 물체 방향(yaw)이 파지에 필요한지 (B) — 필요하면 C가 `target_pose` orientation 채움
 - [x] 그리퍼 컨트롤러 이름 → `gripper_controller`
+- [ ] YOLO 클래스 이름 목록 (C) — `Align`의 `target_class`와 같은 이름 사용
+- [x] 목표 클래스 지정 방식 → `/perception/target_class` (`std_msgs/msg/String`, `transient_local`)
+- [ ] 관측 자세(observe pose) 관절 값 (B, C) — 이동·정렬 중 팔 고정 자세. YOLO 학습용 합성 데이터 시점 기준
+- [ ] 검출 발행 주기 Hz (C) — WSL 환경 CPU 추론 속도 측정 후 결정
+- [x] 공용 launch 파일에 렌더러 옵션 인자 추가 (A) → `software_gl`, `headless`, `render_engine` (0장)
+- [ ] 카메라 해상도 (C) — 320×240(현재 테스트 값)과 640×480을 첫 학습 때 비교, RTF 영향도 함께 확인
 
 ---
 
 ## 7. 변경 규칙
 
 1. 이 문서 수정은 PR로만 한다.
-2. 토픽 이름 · 메시지 타입 · 프레임을 바꾸는 PR은 **해당 토픽을 쓰는 담당자 전원**의 리뷰를 받는다.
+2. 토픽 이름 · 메시지 타입 · 프레임을 바꾸는 PR은 해당 토픽을 쓰는 담당자 전원의 리뷰를 받는다.
 3. 아래 이력에 기록한다.
 
 ## 8. 변경 이력
@@ -279,3 +365,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-01 | v0.4 | 1자 버전 URDF로 교체, 카메라 위치(link5, eye-in-hand) · 그리퍼 서보 범위 반영 | A |
 | 2026-11-01 | v0.5 | 모바일 베이스(TurtleBot3 Waffle) 제안, 카메라 · 정렬 · 그리퍼 토픽/액션 이름 확정 | A |
 | 2026-11-02 | v0.6 | PR #1 리뷰 반영: 정렬을 베이스 미세 정렬로 변경, `/servoing/cmd_vel`, `Align` 액션 필드, 5.1 조건, IK 확인 단계, 차체 직접 제작(B, D 동의, Windows RTF 근거 추가) | A |
+| 2026-11-03 | v0.7 | PR #1 2차 리뷰 반영: `Align` 기준 좌표계(`base_link`) · `standoff_m` · `error_code` 규칙(D), `Grasp` 필드 초안과 액션 비고(B), 검출 · 목표 위치 · 깊이 규칙과 `OBJECT_NOT_FOUND` 기준(C), 렌더링 참고(Mac VM 라이다는 CPU 렌더링 필요), launch 옵션, 차체 패키지 정보(0장 · 2.2 · 3장), 체크리스트 추가 / 차체 명령 선택 방식, IK 실패 후 재정렬 규칙(5.2), `/perception/target_class` 토픽 결정, Nav2 속도 토픽 흐름 확인 및 리매핑 테스트(3.1) | A |
