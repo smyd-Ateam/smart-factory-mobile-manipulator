@@ -1,0 +1,201 @@
+<?xml version="1.0"?>
+<!-- 직접 제작 차동구동 차체 + 라이다 (DOFBOT 팔은 나중에 추가) -->
+<robot name="mm_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ===== 치수 (단위 m, kg) : 임시값, 팔 장착하면서 조정 ===== -->
+  <xacro:property name="PI" value="3.14159265"/>
+  <xacro:property name="chassis_x" value="0.40"/>
+  <xacro:property name="chassis_y" value="0.30"/>
+  <xacro:property name="chassis_z" value="0.10"/>
+  <xacro:property name="chassis_mass" value="5.0"/>
+  <xacro:property name="ground_clearance" value="0.02"/>
+
+  <xacro:property name="wheel_radius" value="0.05"/>
+  <xacro:property name="wheel_width" value="0.04"/>
+  <xacro:property name="wheel_mass" value="0.5"/>
+  <xacro:property name="wheel_separation" value="0.35"/>
+
+  <xacro:property name="caster_radius" value="0.02"/>
+  <xacro:property name="caster_x" value="0.15"/>
+
+  <xacro:property name="lidar_radius" value="0.035"/>
+  <xacro:property name="lidar_height" value="0.04"/>
+  <xacro:property name="lidar_x" value="0.13"/>
+
+  <!-- base_link는 바퀴 축 높이(지면에서 wheel_radius)에 둔다 -->
+  <xacro:property name="chassis_center_z" value="${ground_clearance + chassis_z/2 - wheel_radius}"/>
+
+  <!-- ===== 관성 매크로 ===== -->
+  <xacro:macro name="box_inertia" params="m x y z">
+    <inertia ixx="${m*(y*y+z*z)/12}" ixy="0" ixz="0"
+             iyy="${m*(x*x+z*z)/12}" iyz="0"
+             izz="${m*(x*x+y*y)/12}"/>
+  </xacro:macro>
+  <xacro:macro name="cylinder_inertia" params="m r h">
+    <inertia ixx="${m*(3*r*r+h*h)/12}" ixy="0" ixz="0"
+             iyy="${m*(3*r*r+h*h)/12}" iyz="0"
+             izz="${m*r*r/2}"/>
+  </xacro:macro>
+  <xacro:macro name="sphere_inertia" params="m r">
+    <inertia ixx="${2*m*r*r/5}" ixy="0" ixz="0"
+             iyy="${2*m*r*r/5}" iyz="0"
+             izz="${2*m*r*r/5}"/>
+  </xacro:macro>
+
+  <!-- ===== 링크 ===== -->
+  <link name="base_footprint"/>
+
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 ${chassis_center_z}"/>
+      <geometry><box size="${chassis_x} ${chassis_y} ${chassis_z}"/></geometry>
+      <material name="grey"><color rgba="0.9 0.5 0.1 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${chassis_center_z}"/>
+      <geometry><box size="${chassis_x} ${chassis_y} ${chassis_z}"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 ${chassis_center_z}"/>
+      <mass value="${chassis_mass}"/>
+      <xacro:box_inertia m="${chassis_mass}" x="${chassis_x}" y="${chassis_y}" z="${chassis_z}"/>
+    </inertial>
+  </link>
+
+  <!-- 바퀴: 두 바퀴 모두 회전축이 차체 +y 방향 → 양수 회전 = 전진 -->
+  <xacro:macro name="wheel" params="side y">
+    <link name="${side}_wheel_link">
+      <visual>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+        <material name="black"><color rgba="0.1 0.1 0.1 1"/></material>
+      </visual>
+      <collision>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="${wheel_mass}"/>
+        <xacro:cylinder_inertia m="${wheel_mass}" r="${wheel_radius}" h="${wheel_width}"/>
+      </inertial>
+    </link>
+    <joint name="${side}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${side}_wheel_link"/>
+      <origin xyz="0 ${y} 0" rpy="${-PI/2} 0 0"/>
+      <axis xyz="0 0 1"/>
+    </joint>
+    <gazebo reference="${side}_wheel_link">
+      <mu1>1.0</mu1>
+      <mu2>1.0</mu2>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:wheel side="left" y="${wheel_separation/2}"/>
+  <xacro:wheel side="right" y="${-wheel_separation/2}"/>
+
+  <!-- 캐스터: 마찰 0인 구 (앞뒤) -->
+  <xacro:macro name="caster" params="name x">
+    <link name="${name}_caster_link">
+      <visual>
+        <geometry><sphere radius="${caster_radius}"/></geometry>
+        <material name="black"/>
+      </visual>
+      <collision>
+        <geometry><sphere radius="${caster_radius}"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="0.1"/>
+        <xacro:sphere_inertia m="0.1" r="${caster_radius}"/>
+      </inertial>
+    </link>
+    <joint name="${name}_caster_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="${name}_caster_link"/>
+      <origin xyz="${x} 0 ${caster_radius - wheel_radius}"/>
+    </joint>
+    <gazebo reference="${name}_caster_link">
+      <mu1>0.0</mu1>
+      <mu2>0.0</mu2>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:caster name="front" x="${caster_x}"/>
+  <xacro:caster name="rear" x="${-caster_x}"/>
+
+  <!-- 라이다 -->
+  <link name="base_scan">
+    <visual>
+      <origin xyz="0 0 ${-lidar_height/2 - 0.005}"/><geometry><cylinder radius="${lidar_radius}" length="${lidar_height}"/></geometry>
+      <material name="blue"><color rgba="0.2 0.3 0.8 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${-lidar_height/2 - 0.005}"/><geometry><cylinder radius="${lidar_radius}" length="${lidar_height}"/></geometry>
+    </collision>
+    <inertial>
+      <mass value="0.2"/>
+      <xacro:cylinder_inertia m="0.2" r="${lidar_radius}" h="${lidar_height}"/>
+    </inertial>
+  </link>
+  <joint name="base_scan_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="base_scan"/>
+    <origin xyz="${lidar_x} 0 ${chassis_center_z + chassis_z/2 + lidar_height + 0.005}"/>
+  </joint>
+
+  <gazebo reference="base_scan">
+    <sensor name="lidar" type="gpu_lidar">
+      <always_on>1</always_on>
+      <visualize>true</visualize>
+      <update_rate>10</update_rate>
+      <topic>scan</topic>
+      <ignition_frame_id>base_scan</ignition_frame_id>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.12</min>
+          <max>8.0</max>
+          <resolution>0.01</resolution>
+        </range>
+      </ray>
+    </sensor>
+  </gazebo>
+
+  <!-- ===== Gazebo 플러그인 ===== -->
+  <gazebo>
+    <!-- 차동구동: /cmd_vel 받아서 바퀴 구동, /odom 과 odom→base_footprint TF 발행 -->
+    <plugin filename="ignition-gazebo-diff-drive-system"
+            name="ignition::gazebo::systems::DiffDrive">
+      <left_joint>left_wheel_joint</left_joint>
+      <right_joint>right_wheel_joint</right_joint>
+      <wheel_separation>${wheel_separation}</wheel_separation>
+      <wheel_radius>${wheel_radius}</wheel_radius>
+      <max_linear_acceleration>1.0</max_linear_acceleration>
+      <min_linear_acceleration>-1.0</min_linear_acceleration>
+      <max_angular_acceleration>2.0</max_angular_acceleration>
+      <min_angular_acceleration>-2.0</min_angular_acceleration>
+      <topic>/cmd_vel</topic>
+      <odom_topic>/odom</odom_topic>
+      <tf_topic>/tf</tf_topic>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_footprint</child_frame_id>
+      <odom_publish_frequency>30</odom_publish_frequency>
+    </plugin>
+
+    <!-- 바퀴 관절 상태 → /joint_states (브리지에서 이름 변경) -->
+    <plugin filename="ignition-gazebo-joint-state-publisher-system"
+            name="ignition::gazebo::systems::JointStatePublisher"/>
+  </gazebo>
+
+</robot>
