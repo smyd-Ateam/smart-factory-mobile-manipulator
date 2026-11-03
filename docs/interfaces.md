@@ -4,7 +4,7 @@
 > 코드와 이 문서가 다르면 이 문서를 먼저 고치고(PR + 리뷰) 코드를 맞춘다.
 
 - 담당: A (공통 인터페이스 · 내비게이션 · 상태머신)
-- 상태: 초안 (v0.7)
+- 상태: 초안 (v0.8)
 - `TBD` = 아직 미정. 남은 항목은 6장 체크리스트 참고.
 - 본 프로젝트는 시뮬레이션(소프트웨어)만 다룬다.
 
@@ -36,8 +36,9 @@
 > - Mac UTM VM: 기본 엔진(ogre2)이 튕겨서 `--render-engine ogre` 사용
 >   - GPU 가속(virgl) 상태에서는 라이다 거리값이 전부 최소값(0.12 m)으로 나옴 → 라이다를 쓰려면 CPU 렌더링(`software_gl:=true`) 필요 (2026-11-03 확인). 이때 Gazebo 화면을 켜면 RTF 약 71~76%, 화면 없이(`headless:=true`) 실행하고 RViz로 보면 약 99.7%
 > - Windows + WSL2 (C 노트북): ogre2로 실행하면 Segmentation fault → `LIBGL_ALWAYS_SOFTWARE=1 ign gazebo ... --render-engine ogre`로 실행. 이 경우 카메라도 CPU로 렌더링돼서 RTF가 더 낮을 수 있음
-> - 공용 launch 파일(`mm_description/launch/sim.launch.py`) 옵션: `software_gl:=true`(CPU 렌더링), `headless:=true`(Gazebo 화면 없이), `rviz:=false`(RViz 끄기), `render_engine`(기본 ogre)
->   - Mac UTM VM: `ros2 launch mm_description sim.launch.py software_gl:=true headless:=true`
+>   - `mm_description` 테스트 (2026-11-03, C): `software_gl:=true`로 Gazebo 정상, RTF 평균 약 73% (Gazebo 화면 켠 상태), 라이다 값 정상. RViz는 실행 직후 꺼짐(exit code -11). 원인은 RViz를 GPU로 그렸기 때문으로 추정(확인 중) → 기본값을 RViz도 CPU 렌더링으로 변경 (`rviz_gpu` 옵션 참고)
+> - 공용 launch 파일(`mm_description/launch/sim.launch.py`) 옵션: `software_gl:=true`(CPU 렌더링), `headless:=true`(Gazebo 화면 없이), `rviz:=false`(RViz 끄기), `rviz_gpu:=true`(RViz만 GPU로 그리기, Mac VM용), `render_engine`(기본 ogre)
+>   - Mac UTM VM: `ros2 launch mm_description sim.launch.py software_gl:=true headless:=true rviz_gpu:=true`
 >   - WSL2: `ros2 launch mm_description sim.launch.py software_gl:=true`
 
 ---
@@ -238,19 +239,24 @@ float64 bearing_error_rad
 - `standoff_m`: `base_link` 원점에서 물체까지의 거리
 - `error_code`: 5.3 표의 이름을 그대로 사용. 정렬 중 물체를 놓친 경우에도 `OBJECT_NOT_FOUND` 반환
 
-### 4.2 `Grasp` 액션 (B 제안)
+### 4.2 `Grasp` 액션 (B 확정)
 
-| 구분 | 필드 | 의미 |
-|---|---|---|
-| Goal | `target_id` | 파지 대상 식별 |
-| Goal | `grasp_pose` | 목표 파지 위치·자세 |
-| Result | `success` | 파지 성공 여부 |
-| Result | `error_code` | 실패 원인 (`IK_FAILED` 등, 5.3 참고) |
-| Feedback | `phase` | 현재 진행 단계 (`IK_CHECK`, `APPROACH`, `GRIP` 등) |
+```
+# Goal
+string target_class                      # 잡을 물체 종류 (YOLO 클래스 이름, Align과 같은 이름)
+geometry_msgs/PoseStamped target_pose    # 물체 위치 (C의 /perception/target_pose, base_link 기준)
+---
+# Result
+bool success
+string error_code                        # 실패 시 5.3 실패 코드 이름 (IK_FAILED, GRASP_MISS, GRASP_SLIP 등)
+---
+# Feedback
+string phase                             # 현재 단계 (IK_CHECK, APPROACH, GRIP 등)
+```
 
-- 각 필드의 메시지 타입은 TBD (B)
-- `target_id`가 YOLO 클래스 이름(`target_class`)과 같은 값인지, 별도 식별자인지 확인 필요 (B)
-- `grasp_pose`를 누가 만들고 어떻게 전달할지는 인식(C)·정렬(D) 모듈과 연계해 추후 결정
+- 파지 목표 자세는 B가 `target_pose`(C 제공)를 바탕으로 계산하고, MoveIt2로 IK와 경로 계획을 수행한다.
+- 처음 제안의 `target_id`는 `target_class`로 바꿨다. 같은 클래스 물체가 여러 개일 때 개별 물체를 구분하는 `target_id`를 추가할지는 추후 논의.
+- 처음에는 고정된 접근 방향으로 파지한다. 물체 방향(yaw)이 필요한지는 물체 형상·크기 확정 후 B가 검토.
 - IK 실패 시 B가 `IK_FAILED`를 반환하고, 상태머신이 `/servoing/align`을 다시 호출한다
 
 ---
@@ -310,7 +316,21 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | `UNKNOWN` | 기타 | — |
 
 - `OBJECT_NOT_FOUND` 판정 기준 (C 제안): score 0.5 이상인 목표 클래스 검출이 연속 N프레임(예: 10프레임) 동안 없으면 발생. 수치는 첫 모델 학습 후 조정
-- B가 제안한 `GRASP_FAILED`는 위 표의 `GRASP_MISS` / `GRASP_SLIP`과 같은 뜻인지 확인 필요 (B)
+- B는 `IK_FAILED`, `GRASP_MISS`, `GRASP_SLIP`을 사용한다 (`GRASP_FAILED`는 따로 만들지 않음, B 확인)
+
+### 5.4 파지 대상 물체 (2026-11-03 회의)
+
+단계별로 진행한다. 앞 단계가 끝까지 성공하면 다음 단계 물체를 추가한다.
+
+| 단계 | 클래스 이름 | 물체 | 크기 | 모델 |
+|---|---|---|---|---|
+| 1단계 | `block` | 사각 블록 (직육면체) | 2.5 × 2.5 × 4 cm | SDF 기본 도형 (box) |
+| 1단계 | `pin` | 원통형 핀 (롤러) | 지름 2 cm, 길이 5 cm | SDF 기본 도형 (cylinder) |
+| 2단계 | `hex_nut` | 육각 너트 | 폭 3 cm, 두께 1.5 cm | CAD로 제작 |
+| 3단계 | `bolt` | 육각 볼트 | 머리 폭 2.5 cm, 길이 6 cm | CAD 또는 무료 모델 |
+
+- 크기는 그리퍼 최대 벌림 폭(B 확인 중)보다 작아야 한다. hex_nut은 꼭짓점끼리 약 3.5 cm라 잡는 방향에 주의.
+- 학습 데이터는 Gazebo 합성 데이터를 기본으로 하고, 실제 사진 데이터셋(Roboflow, CC BY 4.0)을 보조로 섞는다 (C). 클래스 이름은 위 이름으로 통일.
 
 ---
 
@@ -331,20 +351,22 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - [x] visual servoing 제어 방식 → 베이스 미세 정렬, MoveIt Servo 미사용
 - [x] `Align` 액션 필드 → D 제안 반영 (4.1)
 - [x] `Align` 오차 기준 좌표계 → `base_link` (D)
-- [x] `Grasp` 액션 필드 → B 제안 반영 (4.2), 필드별 메시지 타입은 TBD (B)
-- [ ] `grasp_pose` 생성 · 전달 방식 (B, C, D)
+- [x] 파지 목표 자세 생성 → B가 C의 `target_pose`로 계산 (4.2)
 - [x] 5.1 전환 조건 → D 제안 초안 반영, 그리퍼 확정 후 조정
 - [x] 차체 명령 선택 방식 → 상태머신이 단계별로 직접 선택 (5.0)
 - [x] IK 실패 후 재정렬 방식 → 최대 2회 재시도, 시도마다 `standoff_m` 변경 (5.2)
 - [ ] 재시도별 `standoff_m` 값 (B) — 팔이 닿는 범위 확인 후
-- [ ] `Grasp` 필드별 메시지 타입, `target_id` 의미, `GRASP_FAILED`와 `GRASP_MISS`/`GRASP_SLIP` 관계 (B)
-- [ ] 물체 방향(yaw)이 파지에 필요한지 (B) — 필요하면 C가 `target_pose` orientation 채움
+- [x] `Grasp` 필드 타입 · `target_class` 사용 · 실패 코드 → B 확정 (4.2, 5.3)
+- [ ] 같은 클래스 물체가 여러 개일 때 구분 방법 (`target_id` 추가 여부, A·B·C)
+- [ ] 물체 방향(yaw)이 파지에 필요한지 (B) — 처음엔 고정 접근 방향, 물체 확정 후 검토. 필요하면 C가 `target_pose` orientation 채움
 - [x] 그리퍼 컨트롤러 이름 → `gripper_controller`
-- [ ] YOLO 클래스 이름 목록 (C) — `Align`의 `target_class`와 같은 이름 사용
+- [x] 파지 대상 물체 · YOLO 클래스 이름 → `block`, `pin`, `hex_nut`, `bolt` (5.4). `Align` · `Grasp`의 `target_class`와 같은 이름 사용
+- [ ] DOFBOT 그리퍼 최대 벌림 폭 · 들 수 있는 무게 (B) — 물체 크기 확정 전 확인
+- [ ] 물체 놓는 방법 (세움/눕힘, 바닥/작업대 높이) (A, B, D)
 - [x] 목표 클래스 지정 방식 → `/perception/target_class` (`std_msgs/msg/String`, `transient_local`)
 - [ ] 관측 자세(observe pose) 관절 값 (B, C) — 이동·정렬 중 팔 고정 자세. YOLO 학습용 합성 데이터 시점 기준
 - [ ] 검출 발행 주기 Hz (C) — WSL 환경 CPU 추론 속도 측정 후 결정
-- [x] 공용 launch 파일에 렌더러 옵션 인자 추가 (A) → `software_gl`, `headless`, `render_engine` (0장)
+- [x] 공용 launch 파일에 렌더러 옵션 인자 추가 (A) → `software_gl`, `headless`, `rviz_gpu`, `render_engine` (0장)
 - [ ] 카메라 해상도 (C) — 320×240(현재 테스트 값)과 640×480을 첫 학습 때 비교, RTF 영향도 함께 확인
 
 ---
@@ -366,3 +388,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-01 | v0.5 | 모바일 베이스(TurtleBot3 Waffle) 제안, 카메라 · 정렬 · 그리퍼 토픽/액션 이름 확정 | A |
 | 2026-11-02 | v0.6 | PR #1 리뷰 반영: 정렬을 베이스 미세 정렬로 변경, `/servoing/cmd_vel`, `Align` 액션 필드, 5.1 조건, IK 확인 단계, 차체 직접 제작(B, D 동의, Windows RTF 근거 추가) | A |
 | 2026-11-03 | v0.7 | PR #1 2차 리뷰 반영: `Align` 기준 좌표계(`base_link`) · `standoff_m` · `error_code` 규칙(D), `Grasp` 필드 초안과 액션 비고(B), 검출 · 목표 위치 · 깊이 규칙과 `OBJECT_NOT_FOUND` 기준(C), 렌더링 참고(Mac VM 라이다는 CPU 렌더링 필요), launch 옵션, 차체 패키지 정보(0장 · 2.2 · 3장), 체크리스트 추가 / 차체 명령 선택 방식, IK 실패 후 재정렬 규칙(5.2), `/perception/target_class` 토픽 결정, Nav2 속도 토픽 흐름 확인 및 리매핑 테스트(3.1) | A |
+| 2026-11-03 | v0.8 | Grasp 액션 필드 확정(B), `target_id` → `target_class`, 실패 코드 정리, 파지 대상 물체 · 클래스 이름(5.4), WSL 테스트 결과와 RViz 렌더링 옵션(`rviz_gpu`), 체크리스트 갱신 | A |
