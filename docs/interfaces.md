@@ -4,7 +4,7 @@
 > 코드와 이 문서가 다르면 이 문서를 먼저 고치고(PR + 리뷰) 코드를 맞춘다.
 
 - 담당: A (공통 인터페이스 · 내비게이션 · 상태머신)
-- 상태: 초안 (v0.8)
+- 상태: 초안 (v0.9)
 - `TBD` = 아직 미정. 남은 항목은 6장 체크리스트 참고.
 - 본 프로젝트는 시뮬레이션(소프트웨어)만 다룬다.
 
@@ -37,6 +37,7 @@
 >   - GPU 가속(virgl) 상태에서는 라이다 거리값이 전부 최소값(0.12 m)으로 나옴 → 라이다를 쓰려면 CPU 렌더링(`software_gl:=true`) 필요 (2026-11-03 확인). 이때 Gazebo 화면을 켜면 RTF 약 71~76%, 화면 없이(`headless:=true`) 실행하고 RViz로 보면 약 99.7%
 > - Windows + WSL2 (C 노트북): ogre2로 실행하면 Segmentation fault → `LIBGL_ALWAYS_SOFTWARE=1 ign gazebo ... --render-engine ogre`로 실행. 이 경우 카메라도 CPU로 렌더링돼서 RTF가 더 낮을 수 있음
 >   - `mm_description` 테스트 (2026-11-03, C): `software_gl:=true`로 Gazebo 정상, RTF 평균 약 73% (Gazebo 화면 켠 상태), 라이다 값 정상. RViz는 실행 직후 꺼짐(exit code -11). 원인은 RViz를 GPU로 그렸기 때문으로 추정(확인 중) → 기본값을 RViz도 CPU 렌더링으로 변경 (`rviz_gpu` 옵션 참고)
+> - Windows + WSL2 (B 노트북): MoveIt RViz도 `LIBGL_ALWAYS_SOFTWARE=1`을 붙여서 실행 (예: `LIBGL_ALWAYS_SOFTWARE=1 ros2 launch dofbot_moveit_config demo.launch.py`, 2026-11-03 B 노션 기록)
 > - 공용 launch 파일(`mm_description/launch/sim.launch.py`) 옵션: `software_gl:=true`(CPU 렌더링), `headless:=true`(Gazebo 화면 없이), `rviz:=false`(RViz 끄기), `rviz_gpu:=true`(RViz만 GPU로 그리기, Mac VM용), `render_engine`(기본 ogre)
 >   - Mac UTM VM: `ros2 launch mm_description sim.launch.py software_gl:=true headless:=true rviz_gpu:=true`
 >   - WSL2: `ros2 launch mm_description sim.launch.py software_gl:=true`
@@ -121,7 +122,7 @@ map
 | 카메라 optical | `camera_optical_frame` | 이름 확정 | robot_state_publisher |
 | 팔 베이스 | `arm_base_link` | 확정 (원본 `base_link`에서 변경) | robot_state_publisher |
 | 팔 링크 | `link1` ~ `link5` | 확정 (DOFBOT URDF) | robot_state_publisher |
-| 그리퍼 | `gripper_link` | 이름 제안, 모델 TBD (URDF에 없음, 추가 필요) | robot_state_publisher |
+| 그리퍼 | `gripper_link` | 이름 제안, 모델 TBD (URDF에 없음, 추가 필요). 원본 URDF는 그리퍼 모양이 `link5` mesh(STL 1개)에 붙어 있어 따로 움직이지 않음 → STL 분리 또는 새 그리퍼 모델 필요 (B 확인, 2026-11-03) | robot_state_publisher |
 | 그리퍼 끝점 | `ee_link` | 이름 제안, 위치 TBD (URDF에 없음, 추가 필요) | robot_state_publisher |
 
 > 실제 이름 확인 방법: 시뮬 실행 후 `ros2 run tf2_tools view_frames`
@@ -147,10 +148,13 @@ map
 원본 DOFBOT URDF를 Gazebo에서 쓰려면 아래 작업이 필요하다.
 
 - [ ] `base_link` → `arm_base_link` 이름 변경
+  - 현재 MoveIt 설정 패키지(`dofbot_moveit_config`)는 원본 이름 `base_link`로 생성돼 있음 (Self-Collisions 표 등). 이름을 바꾼 뒤 설정 패키지를 다시 생성해야 함
 - [ ] 각 링크에 `<inertial>` (질량 · 관성) 추가
 - [x] `base_link.STL` 확보 (팀원 제공, 크기 약 12 × 26 × 8 cm, 단위 m 확인)
 - [ ] `ros2_control` / `<gazebo>` 태그 추가
+  - 진행 (B, 2026-11-03): MoveIt Setup Assistant로 joint1~5 ros2_control 설정 생성 (명령 position, 상태 position · velocity). 현재는 fake_components(가짜 하드웨어)로 동작하고 Gazebo 연결은 아직
 - [ ] 그리퍼 링크 · 관절, `ee_link` 추가
+  - 원본 URDF는 그리퍼가 `link5` mesh에 포함돼 있어서 STL 분리 또는 새 그리퍼 모델이 먼저 필요. 이 작업이 끝나야 `gripper_joint`, `gripper_controller`, 벌림 폭 측정이 가능
 - [ ] 카메라 링크 · 센서 플러그인 추가
 - [ ] mesh 경로(`package://robot/...`)를 실제 패키지 이름에 맞게 수정
 
@@ -211,6 +215,7 @@ controller_server → cmd_vel_nav → velocity_smoother → (기본) /cmd_vel
 | `/navigate_to_pose` | `nav2_msgs/action/NavigateToPose` | A (Nav2) | 상태머신 | Nav2 표준 |
 | `/servoing/align` | `project_interfaces/action/Align` (예정) | D | 상태머신 | 베이스 미세 정렬 (팔 고정). 필드는 4.1 참고 |
 | `/grasp/execute` | `project_interfaces/action/Grasp` (예정) | B | 상태머신 | IK 검증 및 로봇팔 이동·파지. 필드는 4.2 참고 |
+| `/dofbot_arm_controller/follow_joint_trajectory` | `control_msgs/action/FollowJointTrajectory` | 팔 컨트롤러 | B (MoveIt) | joint1~5, `joint_trajectory_controller/JointTrajectoryController`. 액션 이름은 컨트롤러 기본 규칙으로 적음 (B 환경에서 `ros2 action list`로 확인 필요) |
 | `/gripper_controller/gripper_cmd` | `control_msgs/action/GripperCommand` | 그리퍼 컨트롤러 | B | ros2_control 그리퍼 컨트롤러 이름을 `gripper_controller`로 설정 |
 
 > 표준 메시지로 표현 가능한 건 표준을 쓴다. `project_interfaces` 패키지는 위 커스텀 액션이 확정될 때 만든다.
@@ -364,7 +369,9 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - [ ] DOFBOT 그리퍼 최대 벌림 폭 · 들 수 있는 무게 (B) — 물체 크기 확정 전 확인
 - [ ] 물체 놓는 방법 (세움/눕힘, 바닥/작업대 높이) (A, B, D)
 - [x] 목표 클래스 지정 방식 → `/perception/target_class` (`std_msgs/msg/String`, `transient_local`)
-- [ ] 관측 자세(observe pose) 관절 값 (B, C) — 이동·정렬 중 팔 고정 자세. YOLO 학습용 합성 데이터 시점 기준
+- [ ] 관측 자세(observe pose) 관절 값 (B, C) — 이동·정렬 중 팔 고정 자세. YOLO 학습용 합성 데이터 시점 기준. MoveIt 자세 이름 `observe_pose`로 추가 예정 (B)
+- [x] MoveIt 계획 그룹 → `dofbot_arm` (joint1~5, KDL) (B)
+- [x] MoveIt 기본 자세 → `home` (관절 전부 0, 1자 자세) (B)
 - [ ] 검출 발행 주기 Hz (C) — WSL 환경 CPU 추론 속도 측정 후 결정
 - [x] 공용 launch 파일에 렌더러 옵션 인자 추가 (A) → `software_gl`, `headless`, `rviz_gpu`, `render_engine` (0장)
 - [ ] 카메라 해상도 (C) — 320×240(현재 테스트 값)과 640×480을 첫 학습 때 비교, RTF 영향도 함께 확인
@@ -389,3 +396,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-02 | v0.6 | PR #1 리뷰 반영: 정렬을 베이스 미세 정렬로 변경, `/servoing/cmd_vel`, `Align` 액션 필드, 5.1 조건, IK 확인 단계, 차체 직접 제작(B, D 동의, Windows RTF 근거 추가) | A |
 | 2026-11-03 | v0.7 | PR #1 2차 리뷰 반영: `Align` 기준 좌표계(`base_link`) · `standoff_m` · `error_code` 규칙(D), `Grasp` 필드 초안과 액션 비고(B), 검출 · 목표 위치 · 깊이 규칙과 `OBJECT_NOT_FOUND` 기준(C), 렌더링 참고(Mac VM 라이다는 CPU 렌더링 필요), launch 옵션, 차체 패키지 정보(0장 · 2.2 · 3장), 체크리스트 추가 / 차체 명령 선택 방식, IK 실패 후 재정렬 규칙(5.2), `/perception/target_class` 토픽 결정, Nav2 속도 토픽 흐름 확인 및 리매핑 테스트(3.1) | A |
 | 2026-11-03 | v0.8 | Grasp 액션 필드 확정(B), `target_id` → `target_class`, 실패 코드 정리, 파지 대상 물체 · 클래스 이름(5.4), WSL 테스트 결과와 RViz 렌더링 옵션(`rviz_gpu`), 체크리스트 갱신 | A |
+| 2026-11-04 | v0.9 | B의 MoveIt 설정 기록 반영: 그리퍼가 `link5` mesh에 포함된 문제(2.2 표, 2.4), MoveIt 설정의 `base_link` 이름 재생성 필요(2.4), ros2_control 진행 상황(2.4), WSL MoveIt RViz 렌더링(0장), 팔 컨트롤러 액션(4장), MoveIt 그룹 · 자세 이름(6장) | A |
