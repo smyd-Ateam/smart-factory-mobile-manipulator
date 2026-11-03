@@ -2,7 +2,7 @@
 
 사용 예
   기본        : ros2 launch mm_description sim.launch.py
-  Mac UTM VM  : ros2 launch mm_description sim.launch.py software_gl:=true headless:=true
+  Mac UTM VM  : ros2 launch mm_description sim.launch.py software_gl:=true headless:=true rviz_gpu:=true
   WSL2        : ros2 launch mm_description sim.launch.py software_gl:=true
   RViz 끄기   : rviz:=false 추가
 """
@@ -42,6 +42,9 @@ def generate_launch_description():
                               description='true면 Gazebo 화면 없이 서버만 실행'),
         DeclareLaunchArgument('rviz', default_value='true',
                               description='true면 RViz도 같이 실행 (rviz/base.rviz 설정 사용)'),
+        DeclareLaunchArgument('rviz_gpu', default_value='false',
+                              description='true면 software_gl과 상관없이 RViz만 GPU로 그림 (Mac VM용). '
+                                          'false면 RViz도 software_gl 설정을 따름 (WSL은 false)'),
     ]
 
     # WSL: CPU 렌더링 강제
@@ -93,15 +96,31 @@ def generate_launch_description():
         output='screen',
     )
 
-    rviz = Node(
+    rviz_on = LaunchConfiguration('rviz')
+    rviz_gpu = LaunchConfiguration('rviz_gpu')
+
+    # RViz (rviz_gpu:=false) : software_gl 설정을 그대로 따름
+    rviz_default = Node(
         package='rviz2',
         executable='rviz2',
         arguments=['-d', rviz_file],
         parameters=[{'use_sim_time': True}],
-        # RViz는 GPU로 그려도 문제없으니 CPU 렌더링 설정을 끔
-        additional_env={'LIBGL_ALWAYS_SOFTWARE': '0'},
-        condition=IfCondition(LaunchConfiguration('rviz')),
+        condition=IfCondition(PythonExpression(
+            ["'", rviz_on, "' == 'true' and '", rviz_gpu, "' != 'true'"])),
         output='screen',
     )
 
-    return LaunchDescription(args + [software_env, gazebo, rsp, spawn, bridge, rviz])
+    # RViz (rviz_gpu:=true) : CPU 렌더링 설정을 끄고 GPU로 그림 (Mac VM)
+    rviz_gpu_node = Node(
+        package='rviz2',
+        executable='rviz2',
+        arguments=['-d', rviz_file],
+        parameters=[{'use_sim_time': True}],
+        additional_env={'LIBGL_ALWAYS_SOFTWARE': '0'},
+        condition=IfCondition(PythonExpression(
+            ["'", rviz_on, "' == 'true' and '", rviz_gpu, "' == 'true'"])),
+        output='screen',
+    )
+
+    return LaunchDescription(args + [software_env, gazebo, rsp, spawn, bridge,
+                                     rviz_default, rviz_gpu_node])

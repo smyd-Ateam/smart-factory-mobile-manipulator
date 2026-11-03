@@ -19,7 +19,7 @@ source install/setup.bash
 |---|---|
 | 기본 | `ros2 launch mm_description sim.launch.py` |
 | Windows + WSL2 | `ros2 launch mm_description sim.launch.py software_gl:=true` |
-| Mac UTM VM | `ros2 launch mm_description sim.launch.py software_gl:=true headless:=true` |
+| Mac UTM VM | `ros2 launch mm_description sim.launch.py software_gl:=true headless:=true rviz_gpu:=true` |
 
 Gazebo, 차체, 토픽 연결(브리지), RViz가 한 번에 켜진다. 끌 때는 `Ctrl+C`.
 
@@ -30,6 +30,7 @@ Gazebo, 차체, 토픽 연결(브리지), RViz가 한 번에 켜진다. 끌 때�
 | `software_gl` | `false` | `true`면 CPU 렌더링 (`LIBGL_ALWAYS_SOFTWARE=1`). WSL2, Mac VM에서 필요 |
 | `headless` | `false` | `true`면 Gazebo 화면 없이 계산만 함. 로봇은 RViz로 확인 |
 | `rviz` | `true` | `false`면 RViz를 띄우지 않음 |
+| `rviz_gpu` | `false` | `true`면 RViz만 GPU로 그림 (Mac VM용). `false`면 RViz도 `software_gl` 설정을 따름 (WSL에서 RViz가 꺼지면 `false` 유지) |
 | `render_engine` | `ogre` | Gazebo 렌더링 엔진. ogre2는 Mac VM, WSL2에서 튕겨서 ogre 사용 |
 
 ## 동작 확인
