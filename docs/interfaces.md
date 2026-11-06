@@ -4,7 +4,7 @@
 > 코드와 이 문서가 다르면 이 문서를 먼저 고치고(PR + 리뷰) 코드를 맞춘다.
 
 - 담당: A (공통 인터페이스 · 내비게이션 · 상태머신)
-- 상태: 초안 (v0.10)
+- 상태: 초안 (v0.11)
 - `TBD` = 아직 미정. 남은 항목은 6장 체크리스트 참고.
 - 본 프로젝트는 시뮬레이션(소프트웨어)만 다룬다.
 
@@ -129,6 +129,8 @@ map
 
 > 실제 이름 확인 방법: 시뮬 실행 후 `ros2 run tf2_tools view_frames`
 
+> `map → odom` 발행 주체: SLAM 단계(지도 작성)에서는 slam_toolbox, 자율주행 단계에서는 AMCL이 발행한다.
+
 ### 2.3 팔 관절 (`dofbot_original_pos.urdf` 기준)
 
 모두 회전 관절(revolute), 회전축은 각 관절 프레임의 z축. 실물 서보 번호와 1:1로 대응한다.
@@ -170,7 +172,7 @@ map
 | `/scan` | `sensor_msgs/msg/LaserScan` | 시뮬 | A | `base_scan` | 라이다. 10 Hz, 360개(1° 간격), 0.12~8 m |
 | `/odom` | `nav_msgs/msg/Odometry` | 시뮬 | A | `odom` | 차동구동 플러그인이 발행. `odom → base_footprint` TF도 함께 발행 |
 | `/cmd_vel` | `geometry_msgs/msg/Twist` | 상태머신(A)이 선택한 쪽 | 시뮬 (차체) | — | 차체 속도. 이동 중엔 Nav2, 정렬 중엔 D의 명령을 전달 (5.0 참고) |
-| `/nav2/cmd_vel` | `geometry_msgs/msg/Twist` | A (Nav2) | 상태머신 | — | Nav2 최종 출력. velocity_smoother 출력(`cmd_vel_smoothed`)을 이 이름으로 리매핑 (3.1 참고) |
+| `/nav2/cmd_vel` | `geometry_msgs/msg/Twist` | A (Nav2: velocity_smoother, behavior_server) | 상태머신 | — | Nav2 최종 출력. velocity_smoother 출력(`cmd_vel_smoothed`)과 behavior_server 출력(`cmd_vel`)을 이 이름으로 리매핑 (3.1 참고) |
 | `/camera/image_raw` | `sensor_msgs/msg/Image` | 시뮬 | C, D | `camera_optical_frame` | RGB 이미지. 시뮬 플러그인에서 이 이름으로 설정 |
 | `/camera/depth/image_raw` | `sensor_msgs/msg/Image` | 시뮬 | C, D | `camera_optical_frame` | 깊이 이미지 (RGB-D 카메라). D는 정렬 거리 계산에 사용 |
 | `/camera/camera_info` | `sensor_msgs/msg/CameraInfo` | 시뮬 | C, D | `camera_optical_frame` | 카메라 내부 파라미터 |
@@ -185,10 +187,14 @@ map
 ```
 controller_server → cmd_vel_nav → velocity_smoother → (기본) /cmd_vel
                                                    → (우리) /nav2/cmd_vel → 상태머신 → /cmd_vel
+behavior_server (복구 동작)                        → (기본) /cmd_vel
+                                                   → (우리) /nav2/cmd_vel → 상태머신 → /cmd_vel
 ```
 
 - 기본 `navigation_launch.py`는 controller_server 출력을 `cmd_vel_nav`로, velocity_smoother 출력(`cmd_vel_smoothed`)을 `cmd_vel`로 리매핑한다.
-- 우리 launch 파일에서는 velocity_smoother 출력만 `/nav2/cmd_vel`로 바꾼다. controller_server 쪽 리매핑은 그대로 둔다.
+- 우리 launch 파일에서는 velocity_smoother와 behavior_server 출력을 `/nav2/cmd_vel`로 바꾼다. controller_server 쪽 리매핑은 그대로 둔다.
+- behavior_server를 같이 바꾸는 이유: 기본 설정에서는 복구 동작(spin, backup 등)의 속도 명령이 velocity_smoother를 거치지 않고 `/cmd_vel`로 바로 나가는데, 이렇게 상태머신을 건너뛰면 5.0 규칙이 깨진다.
+- `standalone:=true` 옵션 (`mm_navigation/launch/nav2.launch.py`, 기본 `false`): 위 두 출력을 `/nav2/cmd_vel` 대신 `/cmd_vel`로 바로 보낸다. 상태머신 없이 테스트할 때만 쓴다. 기본값에서는 상태머신이 없으면 차체가 움직이지 않는다.
 - 확인 (2026-11-03): velocity_smoother를 단독 실행하고 `-r cmd_vel:=cmd_vel_nav -r cmd_vel_smoothed:=/nav2/cmd_vel`로 리매핑한 뒤 configure → `/nav2/cmd_vel` Publisher 1, `/cmd_vel_nav` Subscription 1 확인
 
 ### 3.2 `/perception/detections` 필드 규칙 (C 제안)
@@ -400,3 +406,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-03 | v0.8 | Grasp 액션 필드 확정(B), `target_id` → `target_class`, 실패 코드 정리, 파지 대상 물체 · 클래스 이름(5.4), WSL 테스트 결과와 RViz 렌더링 옵션(`rviz_gpu`), 체크리스트 갱신 | A |
 | 2026-11-04 | v0.9 | B의 MoveIt 설정 기록 반영: 그리퍼가 `link5` mesh에 포함된 문제(2.2 표, 2.4), MoveIt 설정의 `base_link` 이름 재생성 필요(2.4), ros2_control 진행 상황(2.4), WSL MoveIt RViz 렌더링(0장), 팔 컨트롤러 액션(4장), MoveIt 그룹 · 자세 이름(6장) | A |
 | 2026-11-07 | v0.10 | C의 WSL 재테스트 결과 반영(0장): RViz CPU 렌더링 후 정상 동작, headless RTF 약 99%, 카메라 추가 후 재측정 예정 | A |
+| 2026-11-07 | v0.11 | `mm_navigation` 구현 반영: behavior_server 출력도 `/nav2/cmd_vel`로 리매핑(3장 표, 3.1), `standalone:=true` 옵션 설명(3.1), 단계별 `map → odom` 발행 주체(2장) | A |
