@@ -27,7 +27,8 @@ def generate_launch_description():
     pkg = get_package_share_directory('mm_description')
     xacro_file = os.path.join(pkg, 'urdf', 'mm_base.urdf.xacro')
     world_file = os.path.join(pkg, 'worlds', WORLD_NAME + '.sdf')
-    rviz_file = os.path.join(pkg, 'rviz', 'base.rviz')
+    default_rviz_file = os.path.join(pkg, 'rviz', 'base.rviz')
+    rviz_file = LaunchConfiguration('rviz_config')
 
     render_engine = LaunchConfiguration('render_engine')
     software_gl = LaunchConfiguration('software_gl')
@@ -41,7 +42,9 @@ def generate_launch_description():
         DeclareLaunchArgument('headless', default_value='false',
                               description='true면 Gazebo 화면 없이 서버만 실행'),
         DeclareLaunchArgument('rviz', default_value='true',
-                              description='true면 RViz도 같이 실행 (rviz/base.rviz 설정 사용)'),
+                              description='true면 RViz도 같이 실행'),
+        DeclareLaunchArgument('rviz_config', default_value=default_rviz_file,
+                              description='RViz 설정 파일 경로'),
         DeclareLaunchArgument('rviz_gpu', default_value='false',
                               description='true면 software_gl과 상관없이 RViz만 GPU로 그림 (Mac VM용). '
                                           'false면 RViz도 software_gl 설정을 따름 (WSL은 false)'),
