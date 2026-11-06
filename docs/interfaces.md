@@ -4,7 +4,7 @@
 > 코드와 이 문서가 다르면 이 문서를 먼저 고치고(PR + 리뷰) 코드를 맞춘다.
 
 - 담당: A (공통 인터페이스 · 내비게이션 · 상태머신)
-- 상태: 초안 (v0.9)
+- 상태: 초안 (v0.10)
 - `TBD` = 아직 미정. 남은 항목은 6장 체크리스트 참고.
 - 본 프로젝트는 시뮬레이션(소프트웨어)만 다룬다.
 
@@ -36,7 +36,9 @@
 > - Mac UTM VM: 기본 엔진(ogre2)이 튕겨서 `--render-engine ogre` 사용
 >   - GPU 가속(virgl) 상태에서는 라이다 거리값이 전부 최소값(0.12 m)으로 나옴 → 라이다를 쓰려면 CPU 렌더링(`software_gl:=true`) 필요 (2026-11-03 확인). 이때 Gazebo 화면을 켜면 RTF 약 71~76%, 화면 없이(`headless:=true`) 실행하고 RViz로 보면 약 99.7%
 > - Windows + WSL2 (C 노트북): ogre2로 실행하면 Segmentation fault → `LIBGL_ALWAYS_SOFTWARE=1 ign gazebo ... --render-engine ogre`로 실행. 이 경우 카메라도 CPU로 렌더링돼서 RTF가 더 낮을 수 있음
->   - `mm_description` 테스트 (2026-11-03, C): `software_gl:=true`로 Gazebo 정상, RTF 평균 약 73% (Gazebo 화면 켠 상태), 라이다 값 정상. RViz는 실행 직후 꺼짐(exit code -11). 원인은 RViz를 GPU로 그렸기 때문으로 추정(확인 중) → 기본값을 RViz도 CPU 렌더링으로 변경 (`rviz_gpu` 옵션 참고)
+>   - `mm_description` 테스트 (2026-11-03, C): `software_gl:=true`로 Gazebo 정상, RTF 평균 약 73% (Gazebo 화면 켠 상태), 라이다 값 정상. RViz는 실행 직후 꺼짐(exit code -11). 원인은 RViz를 GPU로 그렸기 때문으로 추정 → 기본값을 RViz도 CPU 렌더링으로 변경 (`rviz_gpu` 옵션 참고)
+>   - 재테스트 (2026-11-05, C): RViz CPU 렌더링으로 바꾼 뒤 꺼지지 않고 정상 동작 확인. 화면 없이(`headless:=true`) 실행하면 RTF 평균 약 99% (5회, 98.7~99.7%). WSL 소프트웨어 렌더링에서는 Gazebo 화면이 속도를 가장 많이 잡아먹음
+>   - 카메라 센서를 추가하면 화면을 꺼도 카메라 영상은 렌더링되므로, 카메라 추가 후 RTF 다시 측정 예정 (C)
 > - Windows + WSL2 (B 노트북): MoveIt RViz도 `LIBGL_ALWAYS_SOFTWARE=1`을 붙여서 실행 (예: `LIBGL_ALWAYS_SOFTWARE=1 ros2 launch dofbot_moveit_config demo.launch.py`, 2026-11-03 B 노션 기록)
 > - 공용 launch 파일(`mm_description/launch/sim.launch.py`) 옵션: `software_gl:=true`(CPU 렌더링), `headless:=true`(Gazebo 화면 없이), `rviz:=false`(RViz 끄기), `rviz_gpu:=true`(RViz만 GPU로 그리기, Mac VM용), `render_engine`(기본 ogre)
 >   - Mac UTM VM: `ros2 launch mm_description sim.launch.py software_gl:=true headless:=true rviz_gpu:=true`
@@ -397,3 +399,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-03 | v0.7 | PR #1 2차 리뷰 반영: `Align` 기준 좌표계(`base_link`) · `standoff_m` · `error_code` 규칙(D), `Grasp` 필드 초안과 액션 비고(B), 검출 · 목표 위치 · 깊이 규칙과 `OBJECT_NOT_FOUND` 기준(C), 렌더링 참고(Mac VM 라이다는 CPU 렌더링 필요), launch 옵션, 차체 패키지 정보(0장 · 2.2 · 3장), 체크리스트 추가 / 차체 명령 선택 방식, IK 실패 후 재정렬 규칙(5.2), `/perception/target_class` 토픽 결정, Nav2 속도 토픽 흐름 확인 및 리매핑 테스트(3.1) | A |
 | 2026-11-03 | v0.8 | Grasp 액션 필드 확정(B), `target_id` → `target_class`, 실패 코드 정리, 파지 대상 물체 · 클래스 이름(5.4), WSL 테스트 결과와 RViz 렌더링 옵션(`rviz_gpu`), 체크리스트 갱신 | A |
 | 2026-11-04 | v0.9 | B의 MoveIt 설정 기록 반영: 그리퍼가 `link5` mesh에 포함된 문제(2.2 표, 2.4), MoveIt 설정의 `base_link` 이름 재생성 필요(2.4), ros2_control 진행 상황(2.4), WSL MoveIt RViz 렌더링(0장), 팔 컨트롤러 액션(4장), MoveIt 그룹 · 자세 이름(6장) | A |
+| 2026-11-07 | v0.10 | C의 WSL 재테스트 결과 반영(0장): RViz CPU 렌더링 후 정상 동작, headless RTF 약 99%, 카메라 추가 후 재측정 예정 | A |
