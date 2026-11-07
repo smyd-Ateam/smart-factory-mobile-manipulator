@@ -27,12 +27,12 @@
 | ROS2 | Humble |
 | 시뮬레이터 | Gazebo Fortress (`ign gazebo`) |
 | Python | 3.10 |
-| 로봇팔 모델 | DOFBOT (확정) — `dofbot_original_pos.urdf` (1자 기본 자세 버전), 회전 관절 5개 + 그리퍼 서보 1개. 팀원 실물 구현 경험 있음 |
+| 로봇팔 모델 | DOFBOT (확정) — 그리퍼 분리형 모델 (패키지 `dofbot_description`, `feat/grasp`, 2026-11-08 공식 모델로 확정). 회전 관절 5개 + 그리퍼 관절 1개(좌우 집게 mimic). 출처: GitHub DofBot-PickNPlace 프로젝트 (MIT License). 팀원 실물 구현 경험 있음 |
 | 모바일 베이스 모델 | 직접 제작한 차동구동 차체 (확정). 패키지 `mm_description` (`feat/navigation` 브랜치), 차체 40×30×10 cm · 바퀴 반지름 5 cm · 바퀴 간격 35 cm (임시값, 팔 장착 시 조정). TurtleBot3는 Humble에서 Gazebo Classic 전용이라 사용 불가. TurtleBot4는 센서가 많아 무거움: RTF Mac VM 약 10~20%, Windows PC 12.5% (PR #1 댓글 참고) |
 
 > 참고: 이전에 받은 `dofbot_initialposition.urdf`(ㄷ자 자세 버전)는 링크 간 간섭이 생기는 각도 범위가 설정돼 있어 사용하지 않는다.
 
-> 진행 (2026-11-07, B): 그리퍼가 분리된 DOFBOT 모델(GitHub DofBot-PickNPlace 프로젝트)로 전환. 패키지 `dofbot_description`, `dofbot_moveit_config` (`feat/grasp`). Xacro 여러 파일 구조이고, 링크 · 관절 이름은 팀 규칙(`arm_base_link`, `link1`~`link5`, `joint1`~`joint5`)으로 변경. STL 파일 이름은 원본 유지. 기존 `dofbot_original_pos.urdf`와 관절 좌표계 · 회전축이 달라서, 이 모델을 공식 모델로 확정하고 TF 트리(2.1) · 관절 표(2.3)를 갱신하는 건 논의 중 (PR #1)
+> 진행 (2026-11-07, B): 그리퍼가 분리된 DOFBOT 모델(GitHub DofBot-PickNPlace 프로젝트)로 전환. 패키지 `dofbot_description`, `dofbot_moveit_config` (`feat/grasp`). Xacro 여러 파일 구조이고, 링크 · 관절 이름은 팀 규칙(`arm_base_link`, `link1`~`link5`, `joint1`~`joint5`)으로 변경. STL 파일 이름은 원본 유지. 기존 `dofbot_original_pos.urdf`와 관절 좌표계 · 회전축이 달라서, 2026-11-08 이 모델을 공식 모델로 확정하고 TF 트리(2.1) · 관절 표(2.3)를 이 모델 기준으로 갱신. 기존 `dofbot_original_pos.urdf`는 더 이상 쓰지 않는다
 
 > 렌더링 참고 (환경별)
 > - Mac UTM VM: 기본 엔진(ogre2)이 튕겨서 `--render-engine ogre` 사용
@@ -97,17 +97,21 @@ map
      └─ base_footprint        (차체 바닥 기준)
          └─ base_link         (직접 제작 차체)
              ├─ base_scan     (라이다)
-             └─ arm_base_link            ← DOFBOT 원본 URDF의 base_link
+             └─ arm_base_link            ← 분리형 DOFBOT 모델의 팔 베이스
                  └─ link1     (joint1)
                      └─ link2     (joint2)
                          └─ link3     (joint3)
                              └─ link4     (joint4)
                                  └─ link5     (joint5, 손목)
-                                     ├─ camera_link   (link5 위쪽에 장착, eye-in-hand)
+                                     ├─ camera_link   (문서 기준 link5 위쪽. 장착 링크는 논의 중, 아래 참고)
                                      │   └─ camera_optical_frame
-                                     └─ gripper_link  (그리퍼, 6번 서보)
-                                         └─ ee_link   (그리퍼 끝점, TCP)
+                                     ├─ gripper_link  (그리퍼 고정 장착 기준 링크)
+                                     ├─ 좌우 집게 링크 (gripper_joint + mimic 관절)
+                                     └─ ee_link       (그리퍼 끝점, TCP. link5 기준 (0, 0.09, 0) m)
 ```
+
+> 새 분리형 모델에서는 카메라(`DaBai_DCW2_Link`)가 `link4`에 고정돼 있다. `link4`에 달면 손목(joint5)이 돌아도 카메라 방향이 유지된다. `link5`와 `link4` 중 어디로 할지는 C, D 의견을 받은 뒤 확정한다 (PR #1).
+> 현재 xacro 이름과의 대응: `Gripping_point_Link` → `ee_link`, `grip_joint` → `gripper_joint`. `gripper_link`, `camera_optical_frame`은 xacro에 아직 없어서 추가가 필요하다 (B). 보조 고정 링크(`dummy_mimic_*`, `vj1_link`, `vj2_link` 등)는 생략.
 
 > ⚠️ DOFBOT 원본 URDF는 시작 링크 이름이 `base_link`다. 모바일 베이스의 `base_link`와 충돌하므로 `arm_base_link`로 이름을 바꿔서 사용한다.
 > `base_link → arm_base_link` 연결(팔 장착 위치)은 고정 관절(fixed)로 추가하며, 위치 값은 TBD.
@@ -122,29 +126,29 @@ map
 | 로봇 기준 | `base_link` | 확정 (직접 제작 차체에서 이 이름 사용) | robot_state_publisher |
 | 라이다 | `base_scan` | 확정 (직접 제작 차체에서 이 이름 사용) | robot_state_publisher |
 | 바퀴 · 캐스터 | `left_wheel_link`, `right_wheel_link`, `front_caster_link`, `rear_caster_link` | 확정 (`mm_description`) | robot_state_publisher |
-| 카메라 | `camera_link` | 위치 확정 (`link5` 위쪽), 장착 오프셋 값 TBD | robot_state_publisher |
-| 카메라 optical | `camera_optical_frame` | 이름 확정 | robot_state_publisher |
+| 카메라 | `camera_link` | 문서 기준 `link5` 위쪽. 새 모델은 `link4`에 고정이라 장착 링크는 논의 중 (C, D 의견 필요). 장착 오프셋 값 TBD | robot_state_publisher |
+| 카메라 optical | `camera_optical_frame` | 이름 확정. 새 모델 xacro에 없어서 추가 필요 (B) | robot_state_publisher |
 | 팔 베이스 | `arm_base_link` | 확정 (원본 `base_link`에서 변경) | robot_state_publisher |
-| 팔 링크 | `link1` ~ `link5` | 확정 (DOFBOT URDF) | robot_state_publisher |
-| 그리퍼 | `gripper_link` | 이름 제안, 모델 TBD (URDF에 없음, 추가 필요). 원본 URDF는 그리퍼 모양이 `link5` mesh(STL 1개)에 붙어 있어 따로 움직이지 않음 → STL 분리 또는 새 그리퍼 모델 필요 (B 확인, 2026-11-03) | robot_state_publisher |
-| 그리퍼 끝점 | `ee_link` | 이름 제안, 위치 TBD (URDF에 없음, 추가 필요) | robot_state_publisher |
+| 팔 링크 | `link1` ~ `link5` | 확정 (분리형 DOFBOT 모델) | robot_state_publisher |
+| 그리퍼 | `gripper_link` | 확정: `link5`에 고정된 그리퍼 장착 기준 링크 (현재 xacro에 없음, B가 추가 예정). 좌우 집게 링크(`rlink*`, `llink*`)는 `gripper_joint`와 mimic 관절로 움직임 | robot_state_publisher |
+| 그리퍼 끝점 | `ee_link` | 확정: 현재 xacro의 `Gripping_point_Link`를 이 이름으로 사용. `link5` 기준 (0, 0.09, 0) m에 고정. 이름 변경은 B 작업 예정 | robot_state_publisher |
 
 > 실제 이름 확인 방법: 시뮬 실행 후 `ros2 run tf2_tools view_frames`
 
 > `map → odom` 발행 주체: SLAM 단계(지도 작성)에서는 slam_toolbox, 자율주행 단계에서는 AMCL이 발행한다.
 
-### 2.3 팔 관절 (`dofbot_original_pos.urdf` 기준)
+### 2.3 팔 관절 (분리형 DOFBOT 모델 `dofbot_joints.xacro` 기준)
 
-모두 회전 관절(revolute), 회전축은 각 관절 프레임의 z축. 실물 서보 번호와 1:1로 대응한다.
+모두 회전 관절(revolute). 회전축은 관절마다 다르다(비고 참고). 실물 서보 번호와 1:1로 대응한다.
 
 | 관절 | 서보 | 부모 → 자식 | 하한 (rad) | 상한 (rad) | 비고 |
 |---|---|---|---|---|---|
-| `joint1` | 1번 | `arm_base_link` → `link1` | -1.5708 | 1.5708 | 베이스 회전 |
-| `joint2` | 2번 | `link1` → `link2` | -1.5708 | 1.5708 | |
-| `joint3` | 3번 | `link2` → `link3` | -1.5708 | 1.5708 | |
-| `joint4` | 4번 | `link3` → `link4` | -1.5708 | 1.5708 | |
-| `joint5` | 5번 | `link4` → `link5` | -1.5708 | 3.1416 | 손목 회전 |
-| `gripper_joint` (제안) | 6번 | `link5` → `gripper_link` | TBD | TBD | 원본 URDF에 없음. 실물 서보 각도 범위 180° (0~180°로 추정, 확인 필요). 새 분리형 모델에서는 `grip_joint`(-1.5708 ~ 0, 약 90°)가 좌우 집게를 mimic 관절로 함께 움직임 (B, 2026-11-07). 이름 통일은 논의 중 |
+| `joint1` | 1번 | `arm_base_link` → `link1` | -1.5708 | 1.5708 | 베이스 회전, 회전축 z |
+| `joint2` | 2번 | `link1` → `link2` | -1.5708 | 1.5708 | 회전축 x |
+| `joint3` | 3번 | `link2` → `link3` | -1.5708 | 1.5708 | 회전축 x |
+| `joint4` | 4번 | `link3` → `link4` | -1.5708 | 1.5708 | 회전축 x |
+| `joint5` | 5번 | `link4` → `link5` | -1.5708 | 3.1416 | 손목 회전, 회전축 y |
+| `gripper_joint` | 6번 | `link5` → 오른쪽 집게 `rlink1` (나머지 집게 링크는 mimic) | -1.57 | 0 | 약 90°. 좌우 집게가 mimic 관절로 함께 움직임. 현재 xacro 이름은 `grip_joint` (변경 예정, B). 실물 서보 각도 범위 180°(0~180°로 추정)와는 별개 |
 
 - `/joint_states`의 관절 이름은 위 표의 이름을 그대로 사용한다.
 - 실물 서보 각도(°)와 URDF 관절 각도(rad)는 기준점이 다를 수 있다. 실물 코드는 joint2에 -90°, joint4에 +90° 보정을 하고 있었으므로(ㄷ자 버전 기준), 시뮬 결과를 실물로 옮길 때는 변환식을 따로 확인한다.
@@ -160,7 +164,7 @@ map
 - [ ] `ros2_control` / `<gazebo>` 태그 추가
   - 진행 (B, 2026-11-07): 새 분리형 모델 기준으로 MoveIt2 설정 재생성 (`dofbot_arm` 그룹, `home` 자세, `dofbot_arm_controller`), RViz에서 Plan → Execute 성공. 현재는 FakeSystem(가짜 하드웨어) 기준이고 Gazebo · ros2_control 연동은 아직 (`dofbot_gazebo.xacro`, `dofbot_ros2control.xacro`는 비활성화 상태)
 - [ ] 그리퍼 링크 · 관절, `ee_link` 추가
-  - 진행 (B, 2026-11-07): 그리퍼가 분리된 새 모델로 해결. 좌우 집게가 `grip_joint`와 mimic 관절로 함께 움직이고 RViz에서 개폐 확인. `gripper_link` · `ee_link` 이름 정리와 `gripper_controller` 구성은 논의 · 작업 중
+  - 진행 (B, 2026-11-07): 그리퍼가 분리된 새 모델로 해결. 좌우 집게가 `grip_joint`와 mimic 관절로 함께 움직이고 RViz에서 개폐 확인. 이름 확정(2026-11-08): `Gripping_point_Link` → `ee_link`, `grip_joint` → `gripper_joint`, `gripper_link`는 고정 장착 기준 링크. xacro 반영과 `gripper_controller` 구성은 B 작업 예정
 - [ ] 카메라 링크 · 센서 플러그인 추가
 - [x] mesh 경로를 실제 패키지 이름에 맞게 수정 → 새 모델 패키지 `dofbot_description`에서 RViz 표시 확인 (B)
 
@@ -351,11 +355,11 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 
 ## 6. 미정 항목 체크리스트
 
-- [x] 로봇팔 모델 → DOFBOT 확정 (2.3 반영)
+- [x] 로봇팔 모델 → DOFBOT 확정, 그리퍼 분리형 모델로 확정 (2026-11-08, 2.1~2.3 반영)
 - [x] 모바일 베이스 모델 → 직접 제작 차동구동 차체
 - [x] `base_scan` 프레임 이름 → 직접 제작 차체에서 이 이름 사용
 - [ ] 팔 장착 위치 (`base_link → arm_base_link` 고정 관절 값)
-- [x] 카메라 위치 → `link5` 위쪽 (eye-in-hand)
+- [ ] 카메라 장착 링크 (B, C, D) — 문서 기준 `link5` 위쪽(eye-in-hand), 새 모델은 `link4` 고정. C, D 의견 받은 뒤 확정
 - [ ] 카메라 장착 오프셋 (`link5 → camera_link` xyz, rpy) — 실물 사진 기준으로 추정
 - [x] 6번 서보(그리퍼) 각도 범위 → 180°
 - [x] 그리퍼 실제 벌림 폭(cm) · 그리퍼 모델 형태 → 최대 약 6 cm, 좌우 집게 분리형 (`grip_joint` + mimic) (B)
@@ -409,4 +413,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-04 | v0.9 | B의 MoveIt 설정 기록 반영: 그리퍼가 `link5` mesh에 포함된 문제(2.2 표, 2.4), MoveIt 설정의 `base_link` 이름 재생성 필요(2.4), ros2_control 진행 상황(2.4), WSL MoveIt RViz 렌더링(0장), 팔 컨트롤러 액션(4장), MoveIt 그룹 · 자세 이름(6장) | A |
 | 2026-11-07 | v0.10 | C의 WSL 재테스트 결과 반영(0장): RViz CPU 렌더링 후 정상 동작, headless RTF 약 99%, 카메라 추가 후 재측정 예정 | A |
 | 2026-11-07 | v0.11 | `mm_navigation` 구현 반영: behavior_server 출력도 `/nav2/cmd_vel`로 리매핑(3장 표, 3.1), `standalone:=true` 옵션 설명(3.1), 단계별 `map → odom` 발행 주체(2장) | A |
-| 2026-11-08 | v0.12 | B 진행 상황 반영: 분리형 그리퍼 DOFBOT 모델 전환(0장, 공식 확정은 논의 중), `arm_base_link` 이름 변경 완료 · MoveIt 재생성 · 그리퍼 분리(2.4), `grip_joint` 범위(2.3), 팔 컨트롤러 액션 확인(4장), 그리퍼 벌림 폭 약 6 cm · `standoff_m` 초기 시험값 0.25 m · 파지 접근 방향 · 관측 자세 방향(5.4, 6장) | A |
+| 2026-11-08 | v0.12 | B 진행 상황 반영: 분리형 그리퍼 DOFBOT 모델을 공식 모델로 확정(0장), TF 트리 · 그리퍼 · 끝점 · 관절 표 갱신(2.1~2.3), 카메라 장착 링크는 논의 중, `arm_base_link` 이름 변경 완료 · MoveIt 재생성 · 그리퍼 분리(2.4), `grip_joint` 범위(2.3), 팔 컨트롤러 액션 확인(4장), 그리퍼 벌림 폭 약 6 cm · `standoff_m` 초기 시험값 0.25 m · 파지 접근 방향 · 관측 자세 방향(5.4, 6장) | A |
