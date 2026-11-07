@@ -4,7 +4,7 @@
 > 코드와 이 문서가 다르면 이 문서를 먼저 고치고(PR + 리뷰) 코드를 맞춘다.
 
 - 담당: A (공통 인터페이스 · 내비게이션 · 상태머신)
-- 상태: 초안 (v0.11)
+- 상태: 초안 (v0.12)
 - `TBD` = 아직 미정. 남은 항목은 6장 체크리스트 참고.
 - 본 프로젝트는 시뮬레이션(소프트웨어)만 다룬다.
 
@@ -31,6 +31,8 @@
 | 모바일 베이스 모델 | 직접 제작한 차동구동 차체 (확정). 패키지 `mm_description` (`feat/navigation` 브랜치), 차체 40×30×10 cm · 바퀴 반지름 5 cm · 바퀴 간격 35 cm (임시값, 팔 장착 시 조정). TurtleBot3는 Humble에서 Gazebo Classic 전용이라 사용 불가. TurtleBot4는 센서가 많아 무거움: RTF Mac VM 약 10~20%, Windows PC 12.5% (PR #1 댓글 참고) |
 
 > 참고: 이전에 받은 `dofbot_initialposition.urdf`(ㄷ자 자세 버전)는 링크 간 간섭이 생기는 각도 범위가 설정돼 있어 사용하지 않는다.
+
+> 진행 (2026-11-07, B): 그리퍼가 분리된 DOFBOT 모델(GitHub DofBot-PickNPlace 프로젝트)로 전환. 패키지 `dofbot_description`, `dofbot_moveit_config` (`feat/grasp`). Xacro 여러 파일 구조이고, 링크 · 관절 이름은 팀 규칙(`arm_base_link`, `link1`~`link5`, `joint1`~`joint5`)으로 변경. STL 파일 이름은 원본 유지. 기존 `dofbot_original_pos.urdf`와 관절 좌표계 · 회전축이 달라서, 이 모델을 공식 모델로 확정하고 TF 트리(2.1) · 관절 표(2.3)를 갱신하는 건 논의 중 (PR #1)
 
 > 렌더링 참고 (환경별)
 > - Mac UTM VM: 기본 엔진(ogre2)이 튕겨서 `--render-engine ogre` 사용
@@ -142,7 +144,7 @@ map
 | `joint3` | 3번 | `link2` → `link3` | -1.5708 | 1.5708 | |
 | `joint4` | 4번 | `link3` → `link4` | -1.5708 | 1.5708 | |
 | `joint5` | 5번 | `link4` → `link5` | -1.5708 | 3.1416 | 손목 회전 |
-| `gripper_joint` (제안) | 6번 | `link5` → `gripper_link` | TBD | TBD | 원본 URDF에 없음. 서보 각도 범위 180° (0~180°로 추정, 확인 필요) |
+| `gripper_joint` (제안) | 6번 | `link5` → `gripper_link` | TBD | TBD | 원본 URDF에 없음. 실물 서보 각도 범위 180° (0~180°로 추정, 확인 필요). 새 분리형 모델에서는 `grip_joint`(-1.5708 ~ 0, 약 90°)가 좌우 집게를 mimic 관절로 함께 움직임 (B, 2026-11-07). 이름 통일은 논의 중 |
 
 - `/joint_states`의 관절 이름은 위 표의 이름을 그대로 사용한다.
 - 실물 서보 각도(°)와 URDF 관절 각도(rad)는 기준점이 다를 수 있다. 실물 코드는 joint2에 -90°, joint4에 +90° 보정을 하고 있었으므로(ㄷ자 버전 기준), 시뮬 결과를 실물로 옮길 때는 변환식을 따로 확인한다.
@@ -151,16 +153,16 @@ map
 
 원본 DOFBOT URDF를 Gazebo에서 쓰려면 아래 작업이 필요하다.
 
-- [ ] `base_link` → `arm_base_link` 이름 변경
-  - 현재 MoveIt 설정 패키지(`dofbot_moveit_config`)는 원본 이름 `base_link`로 생성돼 있음 (Self-Collisions 표 등). 이름을 바꾼 뒤 설정 패키지를 다시 생성해야 함
+- [x] `base_link` → `arm_base_link` 이름 변경
+  - 완료 (B, 2026-11-07): 새 모델 Xacro에서 `arm_base_link`, `link1`~`link5`, `joint1`~`joint5`로 변경하고, MoveIt 설정 패키지도 새 모델 기준으로 다시 생성
 - [ ] 각 링크에 `<inertial>` (질량 · 관성) 추가
 - [x] `base_link.STL` 확보 (팀원 제공, 크기 약 12 × 26 × 8 cm, 단위 m 확인)
 - [ ] `ros2_control` / `<gazebo>` 태그 추가
-  - 진행 (B, 2026-11-03): MoveIt Setup Assistant로 joint1~5 ros2_control 설정 생성 (명령 position, 상태 position · velocity). 현재는 fake_components(가짜 하드웨어)로 동작하고 Gazebo 연결은 아직
+  - 진행 (B, 2026-11-07): 새 분리형 모델 기준으로 MoveIt2 설정 재생성 (`dofbot_arm` 그룹, `home` 자세, `dofbot_arm_controller`), RViz에서 Plan → Execute 성공. 현재는 FakeSystem(가짜 하드웨어) 기준이고 Gazebo · ros2_control 연동은 아직 (`dofbot_gazebo.xacro`, `dofbot_ros2control.xacro`는 비활성화 상태)
 - [ ] 그리퍼 링크 · 관절, `ee_link` 추가
-  - 원본 URDF는 그리퍼가 `link5` mesh에 포함돼 있어서 STL 분리 또는 새 그리퍼 모델이 먼저 필요. 이 작업이 끝나야 `gripper_joint`, `gripper_controller`, 벌림 폭 측정이 가능
+  - 진행 (B, 2026-11-07): 그리퍼가 분리된 새 모델로 해결. 좌우 집게가 `grip_joint`와 mimic 관절로 함께 움직이고 RViz에서 개폐 확인. `gripper_link` · `ee_link` 이름 정리와 `gripper_controller` 구성은 논의 · 작업 중
 - [ ] 카메라 링크 · 센서 플러그인 추가
-- [ ] mesh 경로(`package://robot/...`)를 실제 패키지 이름에 맞게 수정
+- [x] mesh 경로를 실제 패키지 이름에 맞게 수정 → 새 모델 패키지 `dofbot_description`에서 RViz 표시 확인 (B)
 
 ---
 
@@ -223,7 +225,7 @@ behavior_server (복구 동작)                        → (기본) /cmd_vel
 | `/navigate_to_pose` | `nav2_msgs/action/NavigateToPose` | A (Nav2) | 상태머신 | Nav2 표준 |
 | `/servoing/align` | `project_interfaces/action/Align` (예정) | D | 상태머신 | 베이스 미세 정렬 (팔 고정). 필드는 4.1 참고 |
 | `/grasp/execute` | `project_interfaces/action/Grasp` (예정) | B | 상태머신 | IK 검증 및 로봇팔 이동·파지. 필드는 4.2 참고 |
-| `/dofbot_arm_controller/follow_joint_trajectory` | `control_msgs/action/FollowJointTrajectory` | 팔 컨트롤러 | B (MoveIt) | joint1~5, `joint_trajectory_controller/JointTrajectoryController`. 액션 이름은 컨트롤러 기본 규칙으로 적음 (B 환경에서 `ros2 action list`로 확인 필요) |
+| `/dofbot_arm_controller/follow_joint_trajectory` | `control_msgs/action/FollowJointTrajectory` | 팔 컨트롤러 | B (MoveIt) | joint1~5, `joint_trajectory_controller/JointTrajectoryController`. `ros2 action list -t`로 확인 (B, 2026-11-07, 새 모델 MoveIt 설정 기준) |
 | `/gripper_controller/gripper_cmd` | `control_msgs/action/GripperCommand` | 그리퍼 컨트롤러 | B | ros2_control 그리퍼 컨트롤러 이름을 `gripper_controller`로 설정 |
 
 > 표준 메시지로 표현 가능한 건 표준을 쓴다. `project_interfaces` 패키지는 위 커스텀 액션이 확정될 때 만든다.
@@ -342,7 +344,7 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2단계 | `hex_nut` | 육각 너트 | 폭 3 cm, 두께 1.5 cm | CAD로 제작 |
 | 3단계 | `bolt` | 육각 볼트 | 머리 폭 2.5 cm, 길이 6 cm | CAD 또는 무료 모델 |
 
-- 크기는 그리퍼 최대 벌림 폭(B 확인 중)보다 작아야 한다. hex_nut은 꼭짓점끼리 약 3.5 cm라 잡는 방향에 주의.
+- 크기는 그리퍼 최대 벌림 폭(약 6 cm, B 확인)보다 작아야 한다. hex_nut은 꼭짓점끼리 약 3.5 cm라 잡는 방향에 주의.
 - 학습 데이터는 Gazebo 합성 데이터를 기본으로 하고, 실제 사진 데이터셋(Roboflow, CC BY 4.0)을 보조로 섞는다 (C). 클래스 이름은 위 이름으로 통일.
 
 ---
@@ -356,7 +358,7 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - [x] 카메라 위치 → `link5` 위쪽 (eye-in-hand)
 - [ ] 카메라 장착 오프셋 (`link5 → camera_link` xyz, rpy) — 실물 사진 기준으로 추정
 - [x] 6번 서보(그리퍼) 각도 범위 → 180°
-- [ ] 그리퍼 실제 벌림 폭(cm) · 그리퍼 모델 형태
+- [x] 그리퍼 실제 벌림 폭(cm) · 그리퍼 모델 형태 → 최대 약 6 cm, 좌우 집게 분리형 (`grip_joint` + mimic) (B)
 - [x] `base_link.STL` → 팀원 제공
 - [x] joint2, joint4 범위 → 1자 버전 URDF로 교체해서 해결
 - [x] 시뮬 카메라 토픽 이름 → `/camera/...`로 확정
@@ -368,16 +370,16 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - [x] 5.1 전환 조건 → D 제안 초안 반영, 그리퍼 확정 후 조정
 - [x] 차체 명령 선택 방식 → 상태머신이 단계별로 직접 선택 (5.0)
 - [x] IK 실패 후 재정렬 방식 → 최대 2회 재시도, 시도마다 `standoff_m` 변경 (5.2)
-- [ ] 재시도별 `standoff_m` 값 (B) — 팔이 닿는 범위 확인 후
+- [ ] 재시도별 `standoff_m` 값 (B) — 팔이 닿는 범위 확인 후. 초기 시험값 0.25 m (B 제안), 팔 장착 위치 · 물체 높이 · IK 결과를 보고 기본값과 재정렬용 값 확정
 - [x] `Grasp` 필드 타입 · `target_class` 사용 · 실패 코드 → B 확정 (4.2, 5.3)
 - [ ] 같은 클래스 물체가 여러 개일 때 구분 방법 (`target_id` 추가 여부, A·B·C)
-- [ ] 물체 방향(yaw)이 파지에 필요한지 (B) — 처음엔 고정 접근 방향, 물체 확정 후 검토. 필요하면 C가 `target_pose` orientation 채움
+- [ ] 물체 방향(yaw)이 파지에 필요한지 (B) — 처음엔 고정 접근 방향, 물체 확정 후 검토. 필요하면 C가 `target_pose` orientation 채움. 파지는 위에서 수직으로 접근하는 방식을 우선 검토 (B). 5축이라 IK가 어려우면 자세 제약 완화나 측면 접근 검토
 - [x] 그리퍼 컨트롤러 이름 → `gripper_controller`
 - [x] 파지 대상 물체 · YOLO 클래스 이름 → `block`, `pin`, `hex_nut`, `bolt` (5.4). `Align` · `Grasp`의 `target_class`와 같은 이름 사용
-- [ ] DOFBOT 그리퍼 최대 벌림 폭 · 들 수 있는 무게 (B) — 물체 크기 확정 전 확인
+- [ ] DOFBOT 그리퍼 최대 벌림 폭 · 들 수 있는 무게 (B) — 벌림 폭은 약 6 cm로 확인(5.4 물체보다 큼). 무게는 Gazebo에서 시험용 질량으로 마찰 · 파지 안정성을 검증한 뒤 결정
 - [ ] 물체 놓는 방법 (세움/눕힘, 바닥/작업대 높이) (A, B, D)
 - [x] 목표 클래스 지정 방식 → `/perception/target_class` (`std_msgs/msg/String`, `transient_local`)
-- [ ] 관측 자세(observe pose) 관절 값 (B, C) — 이동·정렬 중 팔 고정 자세. YOLO 학습용 합성 데이터 시점 기준. MoveIt 자세 이름 `observe_pose`로 추가 예정 (B)
+- [ ] 관측 자세(observe pose) 관절 값 (B, C) — 이동·정렬 중 팔 고정 자세. YOLO 학습용 합성 데이터 시점 기준. MoveIt 자세 이름 `observe_pose`로 추가 예정 (B). 전방 사선 하향 관측을 우선 검토하고, C와 카메라 시야를 확인한 뒤 관절값 확정
 - [x] MoveIt 계획 그룹 → `dofbot_arm` (joint1~5, KDL) (B)
 - [x] MoveIt 기본 자세 → `home` (관절 전부 0, 1자 자세) (B)
 - [ ] 검출 발행 주기 Hz (C) — WSL 환경 CPU 추론 속도 측정 후 결정
@@ -407,3 +409,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-04 | v0.9 | B의 MoveIt 설정 기록 반영: 그리퍼가 `link5` mesh에 포함된 문제(2.2 표, 2.4), MoveIt 설정의 `base_link` 이름 재생성 필요(2.4), ros2_control 진행 상황(2.4), WSL MoveIt RViz 렌더링(0장), 팔 컨트롤러 액션(4장), MoveIt 그룹 · 자세 이름(6장) | A |
 | 2026-11-07 | v0.10 | C의 WSL 재테스트 결과 반영(0장): RViz CPU 렌더링 후 정상 동작, headless RTF 약 99%, 카메라 추가 후 재측정 예정 | A |
 | 2026-11-07 | v0.11 | `mm_navigation` 구현 반영: behavior_server 출력도 `/nav2/cmd_vel`로 리매핑(3장 표, 3.1), `standalone:=true` 옵션 설명(3.1), 단계별 `map → odom` 발행 주체(2장) | A |
+| 2026-11-08 | v0.12 | B 진행 상황 반영: 분리형 그리퍼 DOFBOT 모델 전환(0장, 공식 확정은 논의 중), `arm_base_link` 이름 변경 완료 · MoveIt 재생성 · 그리퍼 분리(2.4), `grip_joint` 범위(2.3), 팔 컨트롤러 액션 확인(4장), 그리퍼 벌림 폭 약 6 cm · `standoff_m` 초기 시험값 0.25 m · 파지 접근 방향 · 관측 자세 방향(5.4, 6장) | A |
