@@ -4,7 +4,7 @@
 > 코드와 이 문서가 다르면 이 문서를 먼저 고치고(PR + 리뷰) 코드를 맞춘다.
 
 - 담당: A (공통 인터페이스 · 내비게이션 · 상태머신)
-- 상태: 초안 (v0.12)
+- 상태: 초안 (v0.13)
 - `TBD` = 아직 미정. 남은 항목은 6장 체크리스트 참고.
 - 본 프로젝트는 시뮬레이션(소프트웨어)만 다룬다.
 
@@ -102,19 +102,22 @@ map
                      └─ link2     (joint2)
                          └─ link3     (joint3)
                              └─ link4     (joint4)
+                                 ├─ DaBai_DCW2_Link   (카메라 본체. 현재 모델은 link4에 고정, 장착 링크는 논의 중, 아래 참고)
+                                 │   └─ camera_link   (DaBai_DCW2_Link와 같은 위치 · 방향)
+                                 │       └─ camera_optical_frame
                                  └─ link5     (joint5, 손목)
-                                     ├─ camera_link   (문서 기준 link5 위쪽. 장착 링크는 논의 중, 아래 참고)
-                                     │   └─ camera_optical_frame
                                      ├─ gripper_link  (그리퍼 고정 장착 기준 링크)
                                      ├─ 좌우 집게 링크 (gripper_joint + mimic 관절)
                                      └─ ee_link       (그리퍼 끝점, TCP. link5 기준 (0, 0.09, 0) m)
 ```
 
-> 새 분리형 모델에서는 카메라(`DaBai_DCW2_Link`)가 `link4`에 고정돼 있다. `link4`에 달면 손목(joint5)이 돌아도 카메라 방향이 유지된다. `link5`와 `link4` 중 어디로 할지는 C, D 의견을 받은 뒤 확정한다 (PR #1).
-> 현재 xacro 이름과의 대응: `Gripping_point_Link` → `ee_link`, `grip_joint` → `gripper_joint`. `gripper_link`, `camera_optical_frame`은 xacro에 아직 없어서 추가가 필요하다 (B). 보조 고정 링크(`dummy_mimic_*`, `vj1_link`, `vj2_link` 등)는 생략.
+> 새 분리형 모델에서는 카메라(`DaBai_DCW2_Link`)가 `link4`에 고정돼 있다. `link4`에 달면 손목(joint5)이 돌아도 카메라 방향이 유지된다. 문서는 원래 `link5` 위쪽(eye-in-hand)이었고, `link5`와 `link4` 중 어디로 할지는 C, D 의견을 받은 뒤 확정한다 (PR #1). 확정 전까지는 현재 모델(`link4`)을 그대로 쓴다.
+> xacro 반영 완료 (B, 2026-11-08, `feat/grasp`): `Gripping_point_Link` → `ee_link`, `grip_joint` → `gripper_joint`(mimic · transmission · ros2_control · SRDF 포함), `gripper_link`(`link5`에 고정), `camera_link`, `camera_optical_frame` 추가. MoveIt 체인 끝은 `ee_link`. 보조 고정 링크(`dummy_mimic_*`, `vj1_link`, `vj2_link` 등)는 생략.
+> 카메라 축: 이 모델의 `camera_link`는 일반 카메라 프레임(x 앞)과 달리 +Y가 시선 방향이다. 그래서 `camera_link → camera_optical_frame`은 rpy (-90°, 0, 0)이고, 결과는 1.2 표대로 x 오른쪽, y 아래, z 시선 방향이다. RViz에서 축 방향 확인(B), Gazebo 센서 설정(`DaBai_DCW2_Link` 기준 pose `0 0 0 3.14 3.14 -1.57`, 시선 +Y)과도 맞음(A 계산). 실제 영상 · 깊이와 맞는지는 센서 연동 후 확인.
 
 > ⚠️ DOFBOT 원본 URDF는 시작 링크 이름이 `base_link`다. 모바일 베이스의 `base_link`와 충돌하므로 `arm_base_link`로 이름을 바꿔서 사용한다.
-> `base_link → arm_base_link` 연결(팔 장착 위치)은 고정 관절(fixed)로 추가하며, 위치 값은 TBD.
+> `base_link → arm_base_link` 연결(팔 장착 위치)은 고정 관절(fixed)로 추가한다.
+> 팔 장착 방향 (2026-11-09 결정, PR #1 B 질문): DOFBOT 모델은 `arm_base_link` 기준 +Y가 팔의 앞쪽이다. 팔 내부 좌표계 · 관절축은 원본 그대로 두고, 장착 관절에서 yaw -90°(`rpy="0 0 -1.5708"`)를 줘서 팔 앞쪽(+Y)을 차체 앞쪽(`base_link` +X)에 맞춘다. 팔 좌표계를 바꾸면 관절축 · mesh 원점 · MoveIt 설정을 모두 다시 고쳐야 하기 때문. 두 좌표계 사이 변환은 TF가 처리한다. 장착 위치(xyz)는 TBD (팔을 차체에 올릴 때 A, B가 같이 정함).
 
 ### 2.2 프레임 목록
 
@@ -126,12 +129,12 @@ map
 | 로봇 기준 | `base_link` | 확정 (직접 제작 차체에서 이 이름 사용) | robot_state_publisher |
 | 라이다 | `base_scan` | 확정 (직접 제작 차체에서 이 이름 사용) | robot_state_publisher |
 | 바퀴 · 캐스터 | `left_wheel_link`, `right_wheel_link`, `front_caster_link`, `rear_caster_link` | 확정 (`mm_description`) | robot_state_publisher |
-| 카메라 | `camera_link` | 문서 기준 `link5` 위쪽. 새 모델은 `link4`에 고정이라 장착 링크는 논의 중 (C, D 의견 필요). 장착 오프셋 값 TBD | robot_state_publisher |
-| 카메라 optical | `camera_optical_frame` | 이름 확정. 새 모델 xacro에 없어서 추가 필요 (B) | robot_state_publisher |
-| 팔 베이스 | `arm_base_link` | 확정 (원본 `base_link`에서 변경) | robot_state_publisher |
+| 카메라 | `camera_link` | 이름 확정. 현재 모델은 `link4 → DaBai_DCW2_Link → camera_link`(오프셋 0), +Y가 시선 방향. 장착 링크(`link5` vs `link4`)는 논의 중 (C, D 의견 필요) | robot_state_publisher |
+| 카메라 optical | `camera_optical_frame` | 확정: `camera_link` 기준 rpy (-90°, 0, 0), 축은 1.2 표 (xacro 추가 완료, B) | robot_state_publisher |
+| 팔 베이스 | `arm_base_link` | 확정 (원본 `base_link`에서 변경). +Y가 팔 앞쪽이라 장착 시 yaw -90° (2.1) | robot_state_publisher |
 | 팔 링크 | `link1` ~ `link5` | 확정 (분리형 DOFBOT 모델) | robot_state_publisher |
-| 그리퍼 | `gripper_link` | 확정: `link5`에 고정된 그리퍼 장착 기준 링크 (현재 xacro에 없음, B가 추가 예정). 좌우 집게 링크(`rlink*`, `llink*`)는 `gripper_joint`와 mimic 관절로 움직임 | robot_state_publisher |
-| 그리퍼 끝점 | `ee_link` | 확정: 현재 xacro의 `Gripping_point_Link`를 이 이름으로 사용. `link5` 기준 (0, 0.09, 0) m에 고정. 이름 변경은 B 작업 예정 | robot_state_publisher |
+| 그리퍼 | `gripper_link` | 확정: `link5`에 고정된 그리퍼 장착 기준 링크 (xacro 추가 완료, B). 좌우 집게 링크(`rlink*`, `llink*`)는 `gripper_joint`와 mimic 관절로 움직임 | robot_state_publisher |
+| 그리퍼 끝점 | `ee_link` | 확정: 원본 `Gripping_point_Link`에서 이름 변경 (xacro 반영 완료, B). `link5` 기준 (0, 0.09, 0) m에 고정. MoveIt IK 대상 링크 | robot_state_publisher |
 
 > 실제 이름 확인 방법: 시뮬 실행 후 `ros2 run tf2_tools view_frames`
 
@@ -148,7 +151,7 @@ map
 | `joint3` | 3번 | `link2` → `link3` | -1.5708 | 1.5708 | 회전축 x |
 | `joint4` | 4번 | `link3` → `link4` | -1.5708 | 1.5708 | 회전축 x |
 | `joint5` | 5번 | `link4` → `link5` | -1.5708 | 3.1416 | 손목 회전, 회전축 y |
-| `gripper_joint` | 6번 | `link5` → 오른쪽 집게 `rlink1` (나머지 집게 링크는 mimic) | -1.57 | 0 | 약 90°. 좌우 집게가 mimic 관절로 함께 움직임. 현재 xacro 이름은 `grip_joint` (변경 예정, B). 실물 서보 각도 범위 180°(0~180°로 추정)와는 별개 |
+| `gripper_joint` | 6번 | `link5` → 오른쪽 집게 `rlink1` (나머지 집게 링크는 mimic) | -1.57 | 0 | 약 90°. 좌우 집게가 mimic 관절로 함께 움직임. 원본 이름 `grip_joint`에서 변경 (xacro 반영 완료, B). 실물 서보 각도 범위 180°(0~180°로 추정)와는 별개 |
 
 - `/joint_states`의 관절 이름은 위 표의 이름을 그대로 사용한다.
 - 실물 서보 각도(°)와 URDF 관절 각도(rad)는 기준점이 다를 수 있다. 실물 코드는 joint2에 -90°, joint4에 +90° 보정을 하고 있었으므로(ㄷ자 버전 기준), 시뮬 결과를 실물로 옮길 때는 변환식을 따로 확인한다.
@@ -164,8 +167,10 @@ map
 - [ ] `ros2_control` / `<gazebo>` 태그 추가
   - 진행 (B, 2026-11-07): 새 분리형 모델 기준으로 MoveIt2 설정 재생성 (`dofbot_arm` 그룹, `home` 자세, `dofbot_arm_controller`), RViz에서 Plan → Execute 성공. 현재는 FakeSystem(가짜 하드웨어) 기준이고 Gazebo · ros2_control 연동은 아직 (`dofbot_gazebo.xacro`, `dofbot_ros2control.xacro`는 비활성화 상태)
 - [ ] 그리퍼 링크 · 관절, `ee_link` 추가
-  - 진행 (B, 2026-11-07): 그리퍼가 분리된 새 모델로 해결. 좌우 집게가 `grip_joint`와 mimic 관절로 함께 움직이고 RViz에서 개폐 확인. 이름 확정(2026-11-08): `Gripping_point_Link` → `ee_link`, `grip_joint` → `gripper_joint`, `gripper_link`는 고정 장착 기준 링크. xacro 반영과 `gripper_controller` 구성은 B 작업 예정
+  - 진행 (B, 2026-11-07): 그리퍼가 분리된 새 모델로 해결. 좌우 집게가 `grip_joint`와 mimic 관절로 함께 움직이고 RViz에서 개폐 확인. 이름 확정(2026-11-08): `Gripping_point_Link` → `ee_link`, `grip_joint` → `gripper_joint`, `gripper_link`는 고정 장착 기준 링크. xacro 반영 완료(B, 2026-11-08). `gripper_controller` 구성은 B 작업 예정
 - [ ] 카메라 링크 · 센서 플러그인 추가
+  - 진행 (B, 2026-11-08): `camera_link`, `camera_optical_frame` 추가. `dofbot_gazebo.xacro`에 RGB-D 센서(`ignition_frame_id`: `camera_optical_frame`)가 있으나 아직 비활성화 상태
+  - 연동할 때 주의: 센서 토픽 이름이 `rgbd_camera/image`, `rgbd_camera/depth_image`, `rgbd_camera/camera_info` 등이라 3장 이름(`/camera/...`)과 다르다. bridge에서 3장 이름으로 맞춘다
 - [x] mesh 경로를 실제 패키지 이름에 맞게 수정 → 새 모델 패키지 `dofbot_description`에서 RViz 표시 확인 (B)
 
 ---
@@ -217,7 +222,7 @@ behavior_server (복구 동작)                        → (기본) /cmd_vel
 ### 3.3 `/perception/target_pose` 규칙 (C 제안)
 
 - orientation은 당분간 위치만 채우고 단위 쿼터니언(회전 없음)으로 둔다. B가 물체 방향(yaw)이 필요하면 C에게 요청.
-- 카메라가 팔(`link5`)에 달려 있으므로, `camera_optical_frame` → `base_link` 변환은 이미지 stamp 시점의 TF로 계산한다.
+- 카메라가 팔에 달려 있으므로(현재 모델은 `link4`), `camera_optical_frame` → `base_link` 변환은 이미지 stamp 시점의 TF로 계산한다.
 - C는 `/perception/target_class`로 받은 클래스의 물체만 `target_pose`로 발행한다. 클래스 이름은 `Align`의 `target_class`와 같은 문자열을 쓴다.
 
 ---
@@ -358,9 +363,9 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - [x] 로봇팔 모델 → DOFBOT 확정, 그리퍼 분리형 모델로 확정 (2026-11-08, 2.1~2.3 반영)
 - [x] 모바일 베이스 모델 → 직접 제작 차동구동 차체
 - [x] `base_scan` 프레임 이름 → 직접 제작 차체에서 이 이름 사용
-- [ ] 팔 장착 위치 (`base_link → arm_base_link` 고정 관절 값)
+- [ ] 팔 장착 위치 (`base_link → arm_base_link` 고정 관절 값) — 방향은 yaw -90° 결정(2.1), xyz는 팔을 차체에 올릴 때 정함 (A, B)
 - [ ] 카메라 장착 링크 (B, C, D) — 문서 기준 `link5` 위쪽(eye-in-hand), 새 모델은 `link4` 고정. C, D 의견 받은 뒤 확정
-- [ ] 카메라 장착 오프셋 (`link5 → camera_link` xyz, rpy) — 실물 사진 기준으로 추정
+- [ ] 카메라 장착 오프셋 — 현재 모델은 `link4 → DaBai_DCW2_Link` 값 사용. 장착 링크가 확정되면 다시 확인
 - [x] 6번 서보(그리퍼) 각도 범위 → 180°
 - [x] 그리퍼 실제 벌림 폭(cm) · 그리퍼 모델 형태 → 최대 약 6 cm, 좌우 집게 분리형 (`grip_joint` + mimic) (B)
 - [x] `base_link.STL` → 팀원 제공
@@ -414,3 +419,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-07 | v0.10 | C의 WSL 재테스트 결과 반영(0장): RViz CPU 렌더링 후 정상 동작, headless RTF 약 99%, 카메라 추가 후 재측정 예정 | A |
 | 2026-11-07 | v0.11 | `mm_navigation` 구현 반영: behavior_server 출력도 `/nav2/cmd_vel`로 리매핑(3장 표, 3.1), `standalone:=true` 옵션 설명(3.1), 단계별 `map → odom` 발행 주체(2장) | A |
 | 2026-11-08 | v0.12 | B 진행 상황 반영: 분리형 그리퍼 DOFBOT 모델을 공식 모델로 확정(0장), TF 트리 · 그리퍼 · 끝점 · 관절 표 갱신(2.1~2.3), 카메라 장착 링크는 논의 중, `arm_base_link` 이름 변경 완료 · MoveIt 재생성 · 그리퍼 분리(2.4), `grip_joint` 범위(2.3), 팔 컨트롤러 액션 확인(4장), 그리퍼 벌림 폭 약 6 cm · `standoff_m` 초기 시험값 0.25 m · 파지 접근 방향 · 관측 자세 방향(5.4, 6장) | A |
+| 2026-11-09 | v0.13 | B xacro 반영 확인: 그리퍼 · 끝점 이름 변경 완료, `camera_link` · `camera_optical_frame` 추가(rpy (-90°, 0, 0), 이 모델 카메라는 +Y가 시선 방향), TF 트리를 현재 모델(카메라 `link4`) 기준으로 갱신(2.1, 2.2), 팔 장착 방향 yaw -90° 결정(2.1), 카메라 센서 토픽 이름 차이 메모(2.4), 체크리스트 갱신 | A |
