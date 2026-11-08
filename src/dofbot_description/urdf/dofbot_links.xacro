@@ -303,7 +303,7 @@
     </collision>
   </link>
 
-  <link name="Gripping_point_Link">
+  <link name="ee_link">
     <inertial>
       <origin xyz="0.00156296722365762 -0.0620110924022177 -0.00099856166886296" rpy="0 0 0" />
       <mass value="0.0122493178431464" />

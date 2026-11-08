@@ -50,12 +50,12 @@
     </transmission>
 
     <!-- Gripper Actuators -->
-    <transmission name="grip_joint_trans">
+    <transmission name="gripper_joint_trans">
         <type>transmission_interface/SimpleTransmission</type>
-        <joint name="grip_joint">
+        <joint name="gripper_joint">
         <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
         </joint>
-        <actuator name="grip_joint_motor">
+        <actuator name="gripper_joint_motor">
         <mechanicalReduction>1</mechanicalReduction>
         </actuator>
     </transmission>

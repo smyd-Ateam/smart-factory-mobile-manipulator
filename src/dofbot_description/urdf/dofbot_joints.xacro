@@ -38,6 +38,23 @@
     <child link="DaBai_DCW2_Link" />
     <axis xyz="0 0 0" />
   </joint>
+
+  <!-- Camera frames -->
+  <link name="camera_link"/>
+  <joint name="camera_frame_joint" type="fixed">
+    <parent link="DaBai_DCW2_Link"/>
+    <child link="camera_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="camera_optical_frame"/>
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_optical_frame"/>
+    <origin xyz="0 0 0"
+            rpy="-1.57079632679 0 0"/>
+  </joint>
+
   <joint name="joint5" type="revolute">
     <origin xyz="0 0.0781490000000018 0.00215000000000008" rpy="0 0 0" />
     <parent link="link4" />
@@ -45,17 +62,26 @@
     <axis xyz="0 1 0" />
     <limit lower="-1.5708" upper="3.1416" effort="100" velocity="1" />
   </joint>
+
+  <!-- Fixed gripper mounting frame -->
+  <link name="gripper_link"/>
+  <joint name="gripper_mount_joint" type="fixed">
+    <parent link="link5"/>
+    <child link="gripper_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
   <joint name="Gripping_point_Joint" type="fixed">
     <origin xyz="0 0.09 0.00" rpy="0 0 0" />
     <parent link="link5" />
-    <child link="Gripping_point_Link" />
+    <child link="ee_link" />
     <axis xyz="0 0 0" />
   </joint>
 
 
 
   <!-- Gripper Right Joints -->
-  <joint name="grip_joint" type="revolute">
+  <joint name="gripper_joint" type="revolute">
     <origin xyz="0.012625 0.029275 0.00475" rpy="0 0 0.42401" />
     <parent link="link5" />
     <child link="rlink1" />
@@ -67,14 +93,14 @@
     <parent link="rlink1" />
     <child link="rlink2" />
     <axis xyz="0 0 1" />
-    <mimic joint="grip_joint" multiplier="1" offset="0" />
+    <mimic joint="gripper_joint" multiplier="1" offset="0" />
   </joint>
   <joint name="rlink_joint3" type="continuous">
     <origin xyz="0.0045 0.047275 0.0045" rpy="0 0 0.42401" />
     <parent link="link5" />
     <child link="rlink3" />
     <axis xyz="0 0 1" />
-    <mimic joint="grip_joint" multiplier="-1" offset="0" />
+    <mimic joint="gripper_joint" multiplier="-1" offset="0" />
   </joint>
 
 
@@ -85,21 +111,21 @@
     <parent link="link5" />
     <child link="llink1" />
     <axis xyz="0 0 1" />
-    <mimic joint="grip_joint" multiplier="1" offset="0" />
+    <mimic joint="gripper_joint" multiplier="1" offset="0" />
   </joint>
   <joint name="llink_joint2" type="continuous">
     <origin xyz="0.027362 0.012302 -0.0025" rpy="0 0 -1.1584" />
     <parent link="llink1" />
     <child link="llink2" />
     <axis xyz="0 0 1" />
-    <mimic joint="grip_joint" multiplier="-1" offset="0" />
+    <mimic joint="gripper_joint" multiplier="-1" offset="0" />
   </joint>
   <joint name="llink_joint3" type="continuous">
     <origin xyz="-0.0045 0.047275 0.0045" rpy="0 0 2.7292" />
     <parent link="link5" />
     <child link="llink3" />
     <axis xyz="0 0 1" />
-    <mimic joint="grip_joint" multiplier="1" offset="0" />
+    <mimic joint="gripper_joint" multiplier="1" offset="0" />
   </joint>
 
 

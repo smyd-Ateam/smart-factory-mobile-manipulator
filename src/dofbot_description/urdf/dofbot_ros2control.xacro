@@ -9,19 +9,19 @@
 
         <!-- Gripper Left Joints Mimic Controls -->
         <joint name="llink_joint1">
-            <param name="mimic">grip_joint</param>
+            <param name="mimic">gripper_joint</param>
             <param name="multiplier">1.0</param>
             <state_interface name="position"/>
             <state_interface name="velocity"/>
         </joint>
         <joint name="llink_joint2">
-            <param name="mimic">grip_joint</param>
+            <param name="mimic">gripper_joint</param>
             <param name="multiplier">-1.0</param>
             <state_interface name="position"/>
             <state_interface name="velocity"/>
         </joint>
         <joint name="llink_joint3">
-            <param name="mimic">grip_joint</param>
+            <param name="mimic">gripper_joint</param>
             <param name="multiplier">1.0</param>
             <state_interface name="position"/>
             <state_interface name="velocity"/>
@@ -29,13 +29,13 @@
 
         <!-- Gripper Right Joints Mimic Controls -->
         <joint name="rlink_joint2">
-            <param name="mimic">grip_joint</param>
+            <param name="mimic">gripper_joint</param>
             <param name="multiplier">1.0</param>
             <state_interface name="position"/>
             <state_interface name="velocity"/>
         </joint>
         <joint name="rlink_joint3">
-            <param name="mimic">grip_joint</param>
+            <param name="mimic">gripper_joint</param>
             <param name="multiplier">-1.0</param>
             <state_interface name="position"/>
             <state_interface name="velocity"/>

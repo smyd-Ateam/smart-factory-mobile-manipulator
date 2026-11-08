@@ -44,7 +44,7 @@
         <maxVel>1.0</maxVel>
         <self_collide>1</self_collide>
     </gazebo>
-    <gazebo reference="Gripping_point_Link">
+    <gazebo reference="ee_link">
         <gravity>true</gravity>
         <mu1>0.2</mu1>
         <mu2>0.2</mu2>
@@ -128,7 +128,7 @@
             <depth_image_topic>rgbd_camera/depth_image</depth_image_topic>
             <points_topic>rgbd_camera/points</points_topic>
             <image_topic>rgbd_camera/image</image_topic>
-            <ignition_frame_id>camera_link_optical</ignition_frame_id>
+            <ignition_frame_id>camera_optical_frame</ignition_frame_id>
         </sensor>
     </gazebo>
 
