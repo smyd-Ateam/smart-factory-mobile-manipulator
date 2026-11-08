@@ -83,7 +83,9 @@ behavior_server는 velocity_smoother를 거치지 않고 `cmd_vel`로 바로 내
 - 가감속(직진 ±1.0 m/s², 회전 ±2.0 rad/s²)은 DiffDrive 플러그인 제한에 맞춘 값이고, 플러그인 값 자체가 측정값이 아니라 임시값이다.
 - 라이다 높이가 지면에서 약 16.5 cm라서 `block`(4 cm) 같이 낮은 물체는 `/scan`과 costmap에 잡히지 않는다. Nav2는 이런 물체를 장애물로 피하지 않으므로, 물체를 밟지 않도록 목표 지점을 물체에서 떨어뜨려 정해야 한다.
 - 목표 근처에서 10초 넘게 맴돌 때가 있음, 원인 미확인
-- RViz를 켠 실행에서 차체가 안 움직였는데 성공으로 끝난 적이 있음, 원인 미확인. 당시 로그에 `Transform data too old ... map to odom`이 함께 나왔다. 도착 여부는 성공 응답만 믿지 말고 위치로도 확인한다.
+- 가짜 성공: controller_server가 볼 때 `map→odom`이 오래돼 목표 변환이 실패하면, 변환 실패가 무시되어 목표가 기본값 (0, 0, yaw 0)으로 판정된다. 차체가 odom 원점 근처(허용 오차 안)에 있으면 안 움직여도 성공으로 끝난다. 로그에는 `Transform data too old ... map to odom` 바로 뒤에 `Reached the goal!`이 나온다. Nav2 1.1.20 소스와 AMCL TF 발행을 일부러 끈 실험으로 확인했다. 도착 여부는 성공 응답만 믿지 말고 위치로도 확인한다.
+- 위 문제의 계기인 TF 멈춤이 왜 생기는지는 원인 미확인이다. RViz를 켠 실행에서 1회 있었다. RViz 관련 여부는 재현 시험(RViz 켬, launch 10회)에서 재현되지 않아 판단하지 못했다. 재현 시험에서는 목표를 RViz 클릭이 아니라 CLI로 보냈다.
+- 시작 단계 실패: AMCL의 `change_state` 응답이 timeout되어(`failed to send response to /amcl/change_state`) `lifecycle_manager_localization`이 `Configuring amcl`에서 멈추고, `map→odom`이 나오지 않아 Nav2가 활성화되지 않은 적이 1회 있다. 원인 미확인이며, 목표를 보내기 전에 Nav2 활성화를 확인한다.
 - RViz에서 벽 안쪽으로 costmap 띠가 한 줄 더 평행하게 보일 때가 있다. 1회 측정에서 costmap 장애물 칸이 -x 벽 지도 칸보다 약 0.05 m 안쪽까지 찍혔고, AMCL 위치 오차는 x 방향 0.054 m, yaw -0.025 rad였다. 크기와 방향은 AMCL 위치 오차와 맞지만 원인으로 확정하지는 않았다. 목표 yaw 오차(0.272 rad)는 목표 방향과의 차이라서 직접 원인으로 보지 않는다.
 - AMCL 초기 위치는 차체가 (0, 0, 0)에 스폰된다고 가정한다. 스폰 위치를 바꾸면 `config/nav2_params.yaml`의 `initial_pose`도 바꾼다.
 - 지도 원점은 Gazebo 월드 원점과 같다 (지도의 벽 위치로 확인). 다른 위치에서 SLAM을 시작해 지도를 새로 만들면 이 관계가 달라질 수 있다.
