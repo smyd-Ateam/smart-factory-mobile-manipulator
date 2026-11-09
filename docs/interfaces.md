@@ -4,7 +4,7 @@
 > 코드와 이 문서가 다르면 이 문서를 먼저 고치고(PR + 리뷰) 코드를 맞춘다.
 
 - 담당: A (공통 인터페이스 · 내비게이션 · 상태머신)
-- 상태: 초안 (v0.13)
+- 상태: 초안 (v0.14)
 - `TBD` = 아직 미정. 남은 항목은 6장 체크리스트 참고.
 - 본 프로젝트는 시뮬레이션(소프트웨어)만 다룬다.
 
@@ -12,7 +12,7 @@
 
 | 표기 | 담당 | 브랜치 |
 |---|---|---|
-| A | 공통 인터페이스 · 내비게이션(Nav2) · 상태머신 | `docs/interfaces`, `feat/navigation` |
+| A | 공통 인터페이스 · 내비게이션(Nav2) · 상태머신 | `docs/interfaces`, `feat/navigation`, `feat/state-machine` (`feat/navigation`에서 분기) |
 | B | 파지 (MoveIt2 · 그리퍼) | `feat/grasp` |
 | C | 인식 (YOLO) | `feat/yolo` |
 | D | Visual Servoing (베이스 미세 정렬) | `feat/visual-servoing` |
@@ -192,6 +192,7 @@ map
 | `/joint_states` | `sensor_msgs/msg/JointState` | 시뮬 / ros2_control | B, D | — | |
 | `/servoing/cmd_vel` | `geometry_msgs/msg/Twist` | D | 상태머신 | — | 베이스 미세 정렬용 차체 속도 명령 (팔은 고정) |
 | `/perception/target_class` | `std_msgs/msg/String` | 상태머신(A) | C | — | 이번에 잡을 물체 클래스 이름. QoS `transient_local` (나중에 켜진 노드도 마지막 값 수신) |
+| `/task_manager/state` | `std_msgs/msg/String` | 상태머신(A) | 누구나 (모니터링 · 시험) | — | 현재 단계 이름 (`IDLE`, `WAIT_READY`, `NAVIGATE`, `VERIFY_ARRIVAL`, `ALIGN`, `GRASP`, `CANCELING`, `SUCCEEDED`, `FAILED`). 단계가 바뀔 때 발행, QoS `transient_local`. 구현 예정 (A) |
 
 ### 3.1 Nav2 속도 명령 흐름 (Humble `nav2_bringup` 확인)
 
@@ -307,6 +308,8 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 그 외 (IK 확인, 파지, 대기 등) | 속도 0 |
 
 - twist_mux 같은 별도 패키지는 쓰지 않고 상태머신 노드 안에서 직접 선택한다.
+- 발행 규칙 (A, 2026-11-09, `mm_task_manager`): `/cmd_vel`을 10 Hz로 계속 발행하고, 속도 0도 계속 발행한다. 선택한 입력이 0.5 s 넘게 안 오면 0을 보낸다. 단계가 바뀌기 전에 받은 명령은 전달하지 않는다.
+- 근거: Ignition DiffDrive는 마지막 `/cmd_vel`을 계속 유지한다 (0.1 m/s를 한 번만 보냈을 때 5.7 s 동안 유지, 2026-11-09 측정). 그래서 0을 한 번만 보내면 안 된다. 이 규칙 덕분에 Nav2가 취소에 응답하지 않아도 상태머신이 0을 보내서 차체가 멈춘다.
 
 ### 5.1 정렬(D) → 파지(B) 전환 조건 (D 제안 초안)
 
@@ -331,7 +334,8 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 
 | 코드 | 의미 | 발생 모듈 |
 |---|---|---|
-| `NAV_FAILED` | 목표 지점 도착 실패 | A |
+| `NAV_NOT_READY` | 시작 확인 실패 (Nav2 비활성, `map → odom` 없음 등). 목표를 보내지 않음 (5.5) | A |
+| `NAV_FAILED` | 목표 지점 도착 실패 (도착 확인 실패 포함, 5.5) | A |
 | `OBJECT_NOT_FOUND` | 물체 미검출 (정렬 중 물체를 놓친 경우 포함) | C, D |
 | `ALIGN_TIMEOUT` | 제한 시간 내 정렬 실패 | D |
 | `IK_FAILED` | 정렬 후 IK가 풀리지 않음 (재정렬 대상) | B |
@@ -341,6 +345,8 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 
 - `OBJECT_NOT_FOUND` 판정 기준 (C 제안): score 0.5 이상인 목표 클래스 검출이 연속 N프레임(예: 10프레임) 동안 없으면 발생. 수치는 첫 모델 학습 후 조정
 - B는 `IK_FAILED`, `GRASP_MISS`, `GRASP_SLIP`을 사용한다 (`GRASP_FAILED`는 따로 만들지 않음, B 확인)
+- 세부 원인(detail): A는 같은 코드 안에서도 원인을 나눠 결과 기록(5.5)에 남긴다. `NAV_NOT_READY`: `lifecycle_inactive` 등 / `NAV_FAILED`: `rejected`, `aborted`, `timeout`, `arrival_check`, `tf_stale` / `UNKNOWN`: `clock_stopped`
+- 상태머신이 `Align` · `Grasp` 결과를 제한 시간 안에 못 받았을 때 쓸 코드는 논의 중 (Align은 `ALIGN_TIMEOUT` 사용 여부 D 확인, Grasp는 제한 시간 B 확인)
 
 ### 5.4 파지 대상 물체 (2026-11-03 회의)
 
@@ -355,6 +361,29 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 
 - 크기는 그리퍼 최대 벌림 폭(약 6 cm, B 확인)보다 작아야 한다. hex_nut은 꼭짓점끼리 약 3.5 cm라 잡는 방향에 주의.
 - 학습 데이터는 Gazebo 합성 데이터를 기본으로 하고, 실제 사진 데이터셋(Roboflow, CC BY 4.0)을 보조로 섞는다 (C). 클래스 이름은 위 이름으로 통일.
+
+### 5.5 이동 단계 확인 · 시간 제한 · 재시도 (A, 2026-11-09)
+
+`mm_task_manager`(`feat/state-machine`) 구현과 시뮬 측정을 바탕으로 정한 규칙이다. 숫자는 모두 임시값이고 파라미터로 바꿀 수 있다.
+
+- 시작 확인: 이동 목표를 보내기 전에 아래를 모두 확인한다. 30 s 안에 안 되면 `NAV_NOT_READY`로 끝내고 목표는 보내지 않는다.
+  - `/lifecycle_manager_localization/is_active`, `/lifecycle_manager_navigation/is_active` (`std_srvs/srv/Trigger`)가 true
+  - `map → odom` TF가 신선함 (아래 기준)
+  - `/navigate_to_pose` 액션 서버가 있음
+  - 근거: AMCL 활성화 단계에서 멈춰 Nav2가 켜지지 않은 적이 있다 (`mm_navigation` README)
+- 도착 확인: Nav2가 SUCCEEDED를 돌려줘도, 0.5 s 뒤 `map → base_link`를 목표와 비교한다. 위치 0.15 m, yaw 0.35 rad를 넘으면 `NAV_FAILED` (`arrival_check`).
+  - 근거: `map → odom` 변환이 실패하면 Nav2가 차체를 움직이지 않고 성공을 돌려주는 경우가 있다 (`mm_navigation` README "가짜 성공")
+  - 기준값은 D의 정렬 시작 범위와 같은 값으로 잡았다
+  - `/amcl_pose`는 쓰지 않는다 (차체가 일정 거리 · 각도를 움직여야 갱신됨)
+- TF 신선도: `map → odom`의 stamp가 현재 시각 − 0.5 s보다 오래되면 오래된 것으로 본다 (`tf_stale`). AMCL은 stamp를 `transform_tolerance`(1.0 s)만큼 미래로 찍고, 차체가 정지해 있어도 10 Hz로 다시 보낸다 (2026-11-09 측정). 미래 시각은 정상으로 본다.
+- 도착 오차 측정 (2026-11-09, 정상 주행 4회): 상태머신 기준 0.09~0.10 m (Nav2 `xy_goal_tolerance` 0.10), Gazebo 실제 위치 기준 0.05~0.12 m, yaw 약 0.24 rad (Nav2 yaw 허용치 0.25 근처). D 정렬 시작 범위(0.15 m)까지 여유가 작아서 Nav2 허용 오차 조정 여부를 검토 중 (A, D)
+- 시간 제한
+  - 단계마다 sim time 기준 제한을 둔다 (이동 90 s). 넘으면 목표를 취소하고 `NAV_FAILED` (`timeout`)
+  - 취소 응답은 5 s까지 기다리고, 응답이 없으면 이번 실행을 중단한다
+  - 취소 뒤에 늦게 도착한 이전 목표의 결과는 무시한다
+  - `/clock`이 실제 시간(wall time)으로 3 s 넘게 멈추면 `UNKNOWN` (`clock_stopped`)으로 중단한다
+- 재시도: 시작 실패 · 이동 실패 · 도착 확인 실패는 같은 실행에서 다시 시도하지 않는다 (가짜 성공이 반복될 수 있음). 재시도는 5.2 재정렬만 한다.
+- 결과 기록: 실행마다 JSON 한 줄로 기록한다 (기본 `~/.ros/mm_task_manager/results.jsonl`). 항목은 최종 상태, `error_code`, 세부 원인, 실패 단계, 재정렬 횟수, 사용한 `standoff_m`, 단계별 걸린 시간, 도착 오차. 나중에 LLM 실패 원인 추정에 쓴다.
 
 ---
 
@@ -388,12 +417,19 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - [ ] DOFBOT 그리퍼 최대 벌림 폭 · 들 수 있는 무게 (B) — 벌림 폭은 약 6 cm로 확인(5.4 물체보다 큼). 무게는 Gazebo에서 시험용 질량으로 마찰 · 파지 안정성을 검증한 뒤 결정
 - [ ] 물체 놓는 방법 (세움/눕힘, 바닥/작업대 높이) (A, B, D)
 - [x] 목표 클래스 지정 방식 → `/perception/target_class` (`std_msgs/msg/String`, `transient_local`)
-- [ ] 관측 자세(observe pose) 관절 값 (B, C) — 이동·정렬 중 팔 고정 자세. YOLO 학습용 합성 데이터 시점 기준. MoveIt 자세 이름 `observe_pose`로 추가 예정 (B). 전방 사선 하향 관측을 우선 검토하고, C와 카메라 시야를 확인한 뒤 관절값 확정
+- [ ] 관측 자세(observe pose) 관절 값 (B, C) — 이동·정렬 중 팔 고정 자세. YOLO 학습용 합성 데이터 시점 기준. MoveIt 자세 이름 `observe_pose`로 추가 예정 (B). 전방 사선 하향 관측을 우선 검토하고, C와 카메라 시야를 확인한 뒤 관절값 확정. 정렬하면서 `standoff_m`(0.25 m)까지 다가가는 동안에도 물체가 화면 안에 있어야 함 (D). 이동 전에 팔을 이 자세로 보내는 주체 · 방식은 미정 (A, B)
 - [x] MoveIt 계획 그룹 → `dofbot_arm` (joint1~5, KDL) (B)
 - [x] MoveIt 기본 자세 → `home` (관절 전부 0, 1자 자세) (B)
 - [ ] 검출 발행 주기 Hz (C) — WSL 환경 CPU 추론 속도 측정 후 결정
 - [x] 공용 launch 파일에 렌더러 옵션 인자 추가 (A) → `software_gl`, `headless`, `rviz_gpu`, `render_engine` (0장)
 - [ ] 카메라 해상도 (C) — 320×240(현재 테스트 값)과 640×480을 첫 학습 때 비교, RTF 영향도 함께 확인
+- [x] 상태머신 구현 방식 → 직접 만든 Python 노드 (`mm_task_manager`, `feat/state-machine`). 이동 단계 규칙은 5.5
+- [ ] `project_interfaces` 패키지 (Align, Grasp 액션) — A가 만들어서 develop에 먼저 올릴 예정. Align 필드(4.1) 확정 필요 (D)
+- [ ] 상태머신이 Align 응답을 못 받았을 때 `ALIGN_TIMEOUT` 사용 여부 (D)
+- [ ] Grasp 최대 소요 시간 (B) — 상태머신 제한 시간, 지금은 임시 60 s
+- [ ] Grasp에 넘길 `target_pose`의 최대 나이 (B, C) — 정렬 완료 후 받은 값 중 임시 1.0 s 이내. C의 발행 주기 확인 필요
+- [ ] Nav2 도착 허용 오차 조정 여부 (A, D) — 5.5 측정값 참고
+- [ ] 팀 코드 라이선스 (전원) — MIT 또는 Apache-2.0 중 선택. D는 둘 다 괜찮음
 
 ---
 
@@ -420,3 +456,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-07 | v0.11 | `mm_navigation` 구현 반영: behavior_server 출력도 `/nav2/cmd_vel`로 리매핑(3장 표, 3.1), `standalone:=true` 옵션 설명(3.1), 단계별 `map → odom` 발행 주체(2장) | A |
 | 2026-11-08 | v0.12 | B 진행 상황 반영: 분리형 그리퍼 DOFBOT 모델을 공식 모델로 확정(0장), TF 트리 · 그리퍼 · 끝점 · 관절 표 갱신(2.1~2.3), 카메라 장착 링크는 논의 중, `arm_base_link` 이름 변경 완료 · MoveIt 재생성 · 그리퍼 분리(2.4), `grip_joint` 범위(2.3), 팔 컨트롤러 액션 확인(4장), 그리퍼 벌림 폭 약 6 cm · `standoff_m` 초기 시험값 0.25 m · 파지 접근 방향 · 관측 자세 방향(5.4, 6장) | A |
 | 2026-11-09 | v0.13 | B xacro 반영 확인: 그리퍼 · 끝점 이름 변경 완료, `camera_link` · `camera_optical_frame` 추가(rpy (-90°, 0, 0), 이 모델 카메라는 +Y가 시선 방향), TF 트리를 현재 모델(카메라 `link4`) 기준으로 갱신(2.1, 2.2), 팔 장착 방향 yaw -90° 결정(2.1), 카메라 센서 토픽 이름 차이 메모(2.4), 체크리스트 갱신 | A |
+| 2026-11-09 | v0.14 | 상태머신 설계 반영: `/cmd_vel` 발행 규칙(10 Hz, 0.5 s, DiffDrive 측정 근거, 5.0), 실패 코드 `NAV_NOT_READY`와 세부 원인(5.3), 이동 단계 시작 확인 · 도착 확인 · TF 신선도 · 시간 제한 · 재시도 · 결과 기록(5.5, 신규), 상태 토픽 `/task_manager/state`(3장), A 브랜치 `feat/state-machine`. D 의견 반영: v0.11 확인, 관측 자세 시야 조건(6장). 체크리스트 추가(6장) | A |
