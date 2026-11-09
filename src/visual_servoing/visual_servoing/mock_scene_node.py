@@ -6,17 +6,19 @@ interfaces.md 와 같은 토픽으로 발행한다.
 
 발행: /perception/detections, /camera/depth/image_raw, /camera/camera_info,
       TF base_link → camera_optical_frame (static)
+RViz 확인용: TF odom → base_link, /servoing/mock_markers (차체, 물체, 목표 거리 원)
 """
 import math
 from collections import deque
 
 import numpy as np
 import rclpy
-from geometry_msgs.msg import TransformStamped, Twist
+from geometry_msgs.msg import Point, TransformStamped, Twist
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, Image
-from tf2_ros import StaticTransformBroadcaster
+from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
+from visualization_msgs.msg import Marker, MarkerArray
 
 from visual_servoing.geometry import matrix_to_quat, optical_rotation_in_base
 from visual_servoing.mock_model import (CameraMount, object_in_base, observe,
@@ -35,7 +37,7 @@ class MockSceneNode(Node):
         self.declare_parameter('object_size', [0.05, 0.02])        # bbox 계산용 폭, 높이 (m)
         self.declare_parameter('robot_start', [0.0, 0.0, 0.25])    # x, y, yaw
         self.declare_parameter('base_height', 0.05)                # base_link 높이 (mm_description)
-        self.declare_parameter('standoff_m', 0.30)                 # 실제 오차 로그용
+        self.declare_parameter('standoff_m', 0.25)                 # 실제 오차 로그용
         self.declare_parameter('camera_rate', 10.0)                # Hz
         self.declare_parameter('delay_sec', 0.0)                   # 측정 지연
         self.declare_parameter('noise_px', 0.0)
@@ -56,12 +58,15 @@ class MockSceneNode(Node):
         self.create_subscription(Twist, '/servoing/cmd_vel', self.on_cmd, 10)
 
         self.publish_static_tf()
+        self.tf_pub = TransformBroadcaster(self)
+        self.marker_pub = self.create_publisher(MarkerArray, '/servoing/mock_markers', 10)
 
         self.sim_dt = 0.01
         self.create_timer(self.sim_dt, self.on_sim)
         self.create_timer(1.0 / self.get_parameter('camera_rate').value, self.on_capture)
         self.create_timer(0.01, self.on_release)
         self.create_timer(1.0, self.on_log)
+        self.create_timer(0.05, self.on_visualize)
 
     def on_cmd(self, msg):
         # Gazebo DiffDrive와 같이 마지막 명령을 계속 유지한다.
@@ -151,6 +156,61 @@ class MockSceneNode(Node):
             self.info_pub.publish(info)
             self.depth_pub.publish(img)
             self.det_pub.publish(dets)
+
+    def on_visualize(self):
+        """RViz 확인용: odom → base_link TF와 차체·물체·목표 거리 마커."""
+        stamp = self.get_clock().now().to_msg()
+        base = self.get_parameter('base_frame').value
+        bh = self.get_parameter('base_height').value
+
+        t = TransformStamped()
+        t.header.stamp = stamp
+        t.header.frame_id = 'odom'
+        t.child_frame_id = base
+        t.transform.translation.x, t.transform.translation.y = self.x, self.y
+        t.transform.translation.z = bh
+        t.transform.rotation.z = math.sin(self.yaw / 2)
+        t.transform.rotation.w = math.cos(self.yaw / 2)
+        self.tf_pub.sendTransform(t)
+
+        def marker(mid, frame, mtype, rgba):
+            m = Marker()
+            m.header.stamp = stamp
+            m.header.frame_id = frame
+            m.ns, m.id, m.type, m.action = 'mock', mid, mtype, Marker.ADD
+            m.pose.orientation.w = 1.0
+            m.color.r, m.color.g, m.color.b, m.color.a = rgba
+            return m
+
+        # 차체 (mm_description 임시 치수 40 × 30 × 10 cm, base_link 원점 = 바퀴 축 중앙)
+        body = marker(0, base, Marker.CUBE, (0.9, 0.5, 0.1, 0.6))
+        body.pose.position.z = 0.02
+        body.scale.x, body.scale.y, body.scale.z = 0.40, 0.30, 0.10
+
+        # 물체
+        cls = self.get_parameter('target_class').value
+        obj = marker(1, 'odom', Marker.CUBE if cls == 'block' else Marker.CYLINDER,
+                     (0.2, 0.6, 1.0, 1.0))
+        obj.pose.position.x, obj.pose.position.y = self.obj[0], self.obj[1]
+        obj.pose.position.z = self.obj[2]
+        w, h = self.obj_size
+        obj.scale.x, obj.scale.y, obj.scale.z = h, h, w
+
+        # 목표 거리 원: base_link 원점이 이 원 위에서 물체를 바라보면 정렬 완료
+        ring = marker(2, 'odom', Marker.LINE_STRIP, (0.1, 0.8, 0.1, 1.0))
+        ring.scale.x = 0.005
+        r = self.get_parameter('standoff_m').value
+        for k in range(73):
+            a = 2 * math.pi * k / 72
+            ring.points.append(Point(x=self.obj[0] + r * math.cos(a),
+                                     y=self.obj[1] + r * math.sin(a), z=0.0))
+
+        # 차체 중심 → 물체 선
+        line = marker(3, 'odom', Marker.LINE_LIST, (1.0, 1.0, 1.0, 0.8))
+        line.scale.x = 0.003
+        line.points = [Point(x=self.x, y=self.y, z=bh), Point(x=self.obj[0], y=self.obj[1], z=self.obj[2])]
+
+        self.marker_pub.publish(MarkerArray(markers=[body, obj, ring, line]))
 
     def on_log(self):
         e_r, e_b = true_error(self.p_base(), self.get_parameter('standoff_m').value)

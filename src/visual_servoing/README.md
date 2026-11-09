@@ -23,6 +23,9 @@ ros2 launch visual_servoing mock_align.launch.py delay_sec:=0.5 noise_px:=2.0 no
 
 `[실제]` 로그가 모의 차체의 실제 오차, `servoing_align` 로그가 정렬 노드가 계산한 오차다. 둘 다 0 근처에서 멈추면 정상.
 
+RViz가 같이 켜진다 (위에서 본 화면). 주황 상자 = 차체, 파란 물체 = 목표 물체, 초록 원 = 목표 거리(`standoff_m`).
+차체 중심(`base_link`)이 초록 원 위에 오고 물체를 정면으로 보면 정렬 완료다. RViz 없이 실행하려면 `rviz:=false`.
+
 ## 단위 테스트
 
 ```bash

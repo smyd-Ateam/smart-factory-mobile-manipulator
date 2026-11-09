@@ -36,7 +36,7 @@ class AlignNode(Node):
 
         self.declare_parameter('enabled', True)
         self.declare_parameter('target_class', '')
-        self.declare_parameter('standoff_m', 0.30)
+        self.declare_parameter('standoff_m', 0.25)   # 초기 시험값 (interfaces.md, B 제안)
         self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter('score_min', 0.5)
         self.declare_parameter('depth_half_window', 3)
