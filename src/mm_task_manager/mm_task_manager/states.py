@@ -1,0 +1,16 @@
+from enum import Enum
+
+
+class State(Enum):
+    IDLE = 'IDLE'
+    WAIT_READY = 'WAIT_READY'
+    NAVIGATE = 'NAVIGATE'
+    VERIFY_ARRIVAL = 'VERIFY_ARRIVAL'
+    ALIGN = 'ALIGN'
+    GRASP = 'GRASP'
+    CANCELING = 'CANCELING'
+    SUCCEEDED = 'SUCCEEDED'
+    FAILED = 'FAILED'
+
+
+TERMINAL_STATES = frozenset({State.SUCCEEDED, State.FAILED})

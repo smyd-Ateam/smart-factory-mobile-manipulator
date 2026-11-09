@@ -1,0 +1,51 @@
+# test_room 미션 (한 번 실행에 물체 1개). 값은 모두 임시값
+task_manager:
+  ros__parameters:
+    use_sim_time: true
+
+    # 미션
+    goal.x: 1.0        # TODO: 물체 배치 정해지면 수정 (map 기준, m)
+    goal.y: 0.0
+    goal.yaw: 0.0      # rad
+    target_class: block
+
+    # project_interfaces(Align/Grasp) 생성 전에는 true: 도착 확인까지만 하고 끝냄
+    nav_only: true
+
+    # 시작 확인
+    ready_timeout_sec: 30.0
+    tf_max_age_sec: 0.5          # TODO: 3단계에서 AMCL TF 측정 후 조정
+
+    # 이동 / 도착 확인
+    nav_timeout_sec: 90.0
+    cancel_timeout_sec: 5.0
+    settle_sec: 0.5
+    arrival_xy_tol: 0.15         # D의 정렬 시작 범위
+    arrival_yaw_tol: 0.35
+
+    # /cmd_vel 선택 (interfaces.md 5.0)
+    cmd_rate_hz: 10.0
+    cmd_input_timeout_sec: 0.5
+
+    # /clock 정지 감시 (wall time)
+    clock_watchdog_sec: 3.0
+
+    # 정렬 (D)
+    align_timeout_sec: 30.0                 # TODO(D): Align Goal의 timeout_sec 값
+    align_margin_sec: 5.0
+    align_sm_timeout_code: ALIGN_TIMEOUT    # TODO(팀): 상태머신 쪽 시간 초과에 이 코드를 써도 되는지
+
+    # 파지 (B)
+    grasp_timeout_sec: 60.0                 # TODO(B): Grasp 제한 시간
+    grasp_timeout_code: UNKNOWN             # TODO(B): Grasp 시간 초과 코드
+    target_pose_max_age_sec: 1.0            # TODO(C, B): target_pose 신선도 기준
+
+    # 재정렬 (interfaces.md 5.2)
+    max_realign: 2
+    standoff_list: [0.25, 0.22, 0.28]       # 0.25는 B 제안 초기 시험값. 0.22, 0.28은 TODO(B) 임시 자리값
+
+    # 관측 자세
+    observe_pose_required: false            # TODO(B, C): 담당 정해질 때까지 건너뜀
+
+    # 결과 기록 (JSON 한 줄씩)
+    result_log_path: ~/.ros/mm_task_manager/results.jsonl
