@@ -115,3 +115,4 @@ Nav2가 SUCCEEDED를 돌려줘도 `map→base_link`를 목표와 비교한다 (�
 | 시도별 `standoff_m` | `standoff_list` (0.22, 0.28은 임시 자리값) | B |
 | 관측 자세 담당 | `observe_pose_required` | B, C |
 | Align/Grasp 액션 타입 | `project_interfaces` 생성 전에는 `nav_only: true` | B, D |
+| 상태 토픽 `/task_manager/state` (현재 상태 발행, 시험 · 모니터링용) | interfaces.md v0.14에 먼저 추가한 뒤 구현. 그 전까지 mock 시험은 JSONL `stage_durations`로 상태 구간 계산 | A |

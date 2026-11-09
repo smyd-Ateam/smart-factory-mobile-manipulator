@@ -218,6 +218,7 @@ def test_arrival_ok_nav_only_succeeds():
     assert rec['error_code'] == ''
     assert rec['arrival']['dist'] == pytest.approx(0.1)
     assert rec['arrival']['yaw_err'] == pytest.approx(-0.3)
+    assert rec['arrival']['pose'] == pytest.approx(list(pose))   # Gazebo 실제 위치와 비교용
 
 
 def test_fake_success_caught_by_arrival_check():

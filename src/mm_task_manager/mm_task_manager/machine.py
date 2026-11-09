@@ -222,7 +222,7 @@ class TaskMachine:
                                 failed_stage=State.VERIFY_ARRIVAL)
         goal = (self.m.goal_x, self.m.goal_y, self.m.goal_yaw)
         dist, yaw_err = arrival_error(goal, ev.pose)
-        self._arrival = {'dist': dist, 'yaw_err': yaw_err}
+        self._arrival = {'dist': dist, 'yaw_err': yaw_err, 'pose': list(ev.pose)}
         if not arrival_ok(dist, yaw_err, self.m.arrival_xy_tol, self.m.arrival_yaw_tol):
             return self._finish(State.FAILED, ev.now, codes.NAV_FAILED, codes.ARRIVAL_CHECK,
                                 failed_stage=State.VERIFY_ARRIVAL)
