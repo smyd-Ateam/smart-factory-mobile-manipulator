@@ -1,0 +1,4 @@
+# S6 취소 무응답: → NAV_FAILED / timeout, aborted true, 이후 /cmd_vel 0
+mock_nav_server:
+  ros__parameters:
+    mode: hang_ignore_cancel

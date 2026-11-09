@@ -1,0 +1,7 @@
+# S3 TF 멈춤: 시작 확인 뒤 map->odom 발행 중단 → NAV_FAILED / tf_stale
+mock_tf:
+  ros__parameters:
+    map_odom_stop_after_sec: 3.0
+mock_nav_server:
+  ros__parameters:
+    duration_sec: 5.0

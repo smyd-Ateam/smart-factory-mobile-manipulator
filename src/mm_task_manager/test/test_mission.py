@@ -36,6 +36,14 @@ def test_required_fields(missing):
         mission_from_dict(params)
 
 
+@pytest.mark.parametrize('key', ['goal.x', 'goal.y', 'goal.yaw'])
+@pytest.mark.parametrize('value', [float('nan'), float('inf')])
+def test_goal_must_be_finite(key, value):
+    # 노드는 goal.*의 기본값을 NaN으로 선언한다 (YAML에 빠지면 여기서 걸림)
+    with pytest.raises(ValueError, match=key):
+        mission_from_dict(base_params(**{key: value}))
+
+
 def test_empty_target_class_rejected():
     with pytest.raises(ValueError, match='target_class'):
         mission_from_dict(base_params(target_class=''))

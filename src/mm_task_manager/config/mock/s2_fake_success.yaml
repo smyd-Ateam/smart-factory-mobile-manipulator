@@ -1,0 +1,4 @@
+# S2 가짜 성공: Nav2는 SUCCEEDED, TF는 신선한데 차체가 목표에서 1 m 떨어짐 → NAV_FAILED / arrival_check
+mock_tf:
+  ros__parameters:
+    x: 0.0

@@ -12,6 +12,7 @@ setup(
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml', 'README.md']),
         ('share/' + package_name + '/config', glob('config/*.yaml')),
+        ('share/' + package_name + '/config/mock', glob('config/mock/*.yaml')),
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
@@ -22,7 +23,14 @@ setup(
     license='TODO',
     tests_require=['pytest'],
     entry_points={
-        # 노드 실행 파일은 2단계에서 추가
-        'console_scripts': [],
+        'console_scripts': [
+            'task_manager = mm_task_manager.task_manager_node:main',
+            # 시험용 mock
+            'mock_clock = mm_task_manager.mocks.mock_clock:main',
+            'mock_lifecycle = mm_task_manager.mocks.mock_lifecycle:main',
+            'mock_tf = mm_task_manager.mocks.mock_tf:main',
+            'mock_nav_server = mm_task_manager.mocks.mock_nav_server:main',
+            'cmd_recorder = mm_task_manager.mocks.cmd_recorder:main',
+        ],
     },
 )

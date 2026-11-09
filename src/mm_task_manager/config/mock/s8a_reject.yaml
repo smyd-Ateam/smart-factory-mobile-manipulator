@@ -1,0 +1,4 @@
+# S8a 목표 거부 → NAV_FAILED / rejected, 재시도 없음
+mock_nav_server:
+  ros__parameters:
+    mode: reject

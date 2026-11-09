@@ -1,0 +1,4 @@
+# S4 시작 실패: lifecycle이 끝까지 비활성 → NAV_NOT_READY / lifecycle_inactive, 목표 안 보냄
+mock_lifecycle:
+  ros__parameters:
+    active_after_sec: -1.0

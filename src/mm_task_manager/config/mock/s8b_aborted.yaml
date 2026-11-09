@@ -1,0 +1,5 @@
+# S8b Nav2 ABORTED → NAV_FAILED / aborted, 재시도 없음
+mock_nav_server:
+  ros__parameters:
+    mode: aborted
+    duration_sec: 2.0

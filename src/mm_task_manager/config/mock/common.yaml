@@ -1,0 +1,16 @@
+# mock 시나리오 공통값: 시험 시간을 줄이려고 제한 시간을 짧게 둔다
+task_manager:
+  ros__parameters:
+    ready_timeout_sec: 5.0
+    nav_timeout_sec: 10.0
+    cancel_timeout_sec: 3.0
+    clock_watchdog_sec: 3.0
+mock_tf:
+  ros__parameters:
+    x: 1.0          # 목표 위치 (mission_test_room.yaml의 goal)
+    y: 0.0
+    yaw: 0.0
+mock_nav_server:
+  ros__parameters:
+    mode: succeed
+    duration_sec: 3.0

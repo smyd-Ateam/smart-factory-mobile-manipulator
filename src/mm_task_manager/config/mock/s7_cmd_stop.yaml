@@ -1,0 +1,5 @@
+# S7 입력 끊김: Nav 실행 중 1.5 s 뒤 /nav2/cmd_vel 중단 → 0.5 s 뒤 /cmd_vel 0, 이후 SUCCEEDED
+mock_nav_server:
+  ros__parameters:
+    duration_sec: 4.0
+    cmd_stop_after_sec: 1.5

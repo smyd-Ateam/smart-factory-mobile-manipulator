@@ -1,5 +1,6 @@
 """미션 파라미터 읽기 · 검증. 기본값은 모두 임시값 (README TODO 참고)."""
 
+import math
 from dataclasses import dataclass, field
 from typing import List
 
@@ -98,6 +99,9 @@ def mission_from_dict(params):
 
 
 def _validate(m):
+    for name, field_name in _REQUIRED.items():
+        if field_name != 'target_class' and not math.isfinite(getattr(m, field_name)):
+            raise ValueError(f'{name} must be a finite number (got {getattr(m, field_name)})')
     if not m.target_class:
         raise ValueError('target_class must not be empty')
     for f in _POSITIVE_FIELDS:

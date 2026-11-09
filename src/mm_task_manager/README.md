@@ -2,12 +2,62 @@
 
 작업 상태머신: Nav2 이동 → 도착 확인 → 정렬(D) → 파지(B), 단계별 `/cmd_vel` 선택 (`docs/interfaces.md` 5.0)
 
-> 작성 중. 지금은 1단계(순수 로직 + pytest)까지만 있고, ROS 노드는 아직 없다.
+> 작성 중. 지금은 `nav_only`(이동 + 도착 확인)까지 동작한다. Align/Grasp는 `project_interfaces` 생성 후 추가.
+
+## 빌드
+
+```bash
+PYTHONNOUSERSITE=1 colcon build --packages-select mm_task_manager
+```
+
+`~/.local`에 setuptools를 따로 설치한 환경(예: ultralytics 설치)에서는 시스템 packaging과 충돌해 빌드가 실패하므로 `PYTHONNOUSERSITE=1`을 붙인다.
+
+## 실행
+
+```bash
+# 실제 Nav2와 함께 (Nav2는 standalone:=false로 따로 실행)
+ros2 launch mm_task_manager task_manager.launch.py mission:=<미션 YAML>
+
+# mock 시나리오 (Gazebo · Nav2 없이)
+ros2 launch mm_task_manager mock_nav_only.launch.py scenario:=s1_normal out_dir:=<결과 폴더>
+```
+
+mock 결과: `<out_dir>/<scenario>.jsonl` (상태머신 결과), `<out_dir>/<scenario>.csv` (`/cmd_vel` 기록)
+
+| 시나리오 | 내용 | 기대 결과 |
+|---|---|---|
+| `s1_normal` | 정상 | SUCCEEDED, NAVIGATE 동안만 `/cmd_vel` 0.11 |
+| `s2_fake_success` | SUCCEEDED인데 위치가 목표에서 1 m | `NAV_FAILED` / `arrival_check` |
+| `s3_tf_stale` | 이동 중 `map→odom` 발행 중단 | `NAV_FAILED` / `tf_stale` |
+| `s4_not_ready` | lifecycle 비활성 | `NAV_NOT_READY` / `lifecycle_inactive`, 목표 안 보냄 |
+| `s5_timeout` | Nav 끝나지 않음 | 취소 → `NAV_FAILED` / `timeout` |
+| `s6_cancel_no_response` | 취소 응답 없음 | `NAV_FAILED` / `timeout`, `aborted: true`, 이후 `/cmd_vel` 0 |
+| `s7_cmd_stop` | 이동 중 `/nav2/cmd_vel` 끊김 | 0.5 s 안에 `/cmd_vel` 0, 이후 SUCCEEDED |
+| `s8a_reject`, `s8b_aborted` | 목표 거부, ABORTED | `NAV_FAILED` / `rejected`, `aborted`, 재시도 없음 |
+| `s9_clock_stop` | `/clock` 정지 | `UNKNOWN` / `clock_stopped`, `aborted: true`, 취소 요청 |
+
+mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF), `mock_nav_server`(`/navigate_to_pose`), `cmd_recorder`(`/cmd_vel` CSV)
+
+## 노드 `task_manager`
+
+| 구분 | 이름 |
+|---|---|
+| 구독 | `/nav2/cmd_vel`, `/servoing/cmd_vel`, `/clock`, TF (`map→odom`, `map→base_link`) |
+| 발행 | `/cmd_vel` (10 Hz, 선택한 입력 또는 0), `/perception/target_class` (`transient_local`) |
+| 서비스 클라이언트 | `/lifecycle_manager_localization/is_active`, `/lifecycle_manager_navigation/is_active` |
+| 액션 클라이언트 | `/navigate_to_pose` |
+
+- 취소 요청이 거부(REJECTED)되면 취소 완료로 보지 않고 `cancel_timeout_sec`까지 기다린다 (목표가 계속 돌 수 있으므로).
+- 종료(Ctrl-C) 시 `/cmd_vel` 0을 한 번 보낸다.
 
 ## 구조
 
 | 파일 | 내용 |
 |---|---|
+| `mm_task_manager/task_manager_node.py` | ROS 노드 (액션 · 서비스 · TF · 타이머 · `/cmd_vel` 발행) |
+| `mm_task_manager/run.py` | 노드 실행 공통 함수 (SIGINT 처리) |
+| `mm_task_manager/mocks/` | 시험용 mock 노드 |
+| `config/mock/` | mock 시나리오 파라미터 |
 | `mm_task_manager/machine.py` | 상태머신 로직 (rclpy 없음). 이벤트를 받아 명령 목록을 돌려준다 |
 | `mm_task_manager/geometry.py` | 도착 오차, TF 신선도 판정 |
 | `mm_task_manager/cmd_select.py` | 상태별 `/cmd_vel` 입력 선택, 입력 끊김 처리 |
