@@ -30,3 +30,4 @@ CLOCK_STOPPED = 'clock_stopped'      # /clock 정지 (wall time 감시)
 LIFECYCLE_INACTIVE = 'lifecycle_inactive'
 NAV_SERVER_UNAVAILABLE = 'nav_server_unavailable'
 NO_READY_STATUS = 'no_ready_status'
+CMD_VEL_CONFLICT = 'cmd_vel_conflict'   # 자기 말고 /cmd_vel 발행자가 있음 (이전 실행 노드 등)

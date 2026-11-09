@@ -12,6 +12,10 @@ from rclpy.executors import (ExternalShutdownException, MultiThreadedExecutor,
 from rclpy.signals import SignalHandlerOptions
 
 
+class NodeExit(Exception):
+    """콜백에서 던지면 노드를 정상 종료한다 (on_exit 실행 후 종료)."""
+
+
 def run(node_cls, args=None, multithreaded=False, on_exit=None):
     rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = node_cls()
@@ -19,7 +23,7 @@ def run(node_cls, args=None, multithreaded=False, on_exit=None):
     executor.add_node(node)
     try:
         executor.spin()
-    except (KeyboardInterrupt, ExternalShutdownException):
+    except (KeyboardInterrupt, ExternalShutdownException, NodeExit):
         pass
     finally:
         # 정리 도중 두 번째 SIGINT가 오면 destroy_node가 끊기므로 무시

@@ -27,8 +27,9 @@ from mm_task_manager.cmd_select import NAV, SERVO, CmdSelector, source_for
 from mm_task_manager.geometry import yaw_from_quaternion
 from mm_task_manager.mission import Mission, mission_from_dict
 from mm_task_manager.result_log import append_jsonl
-from mm_task_manager.run import run
-from mm_task_manager.states import State
+from mm_task_manager.final_stop import FinalStop
+from mm_task_manager.run import NodeExit, run
+from mm_task_manager.states import TERMINAL_STATES, State
 
 LIFECYCLE_SERVICES = ('/lifecycle_manager_localization/is_active',
                       '/lifecycle_manager_navigation/is_active')
@@ -103,8 +104,11 @@ class TaskManagerNode(Node):
         self.last_clock_sim = 0.0
         self.clock_stop_reported = False
         self.create_subscription(ClockMsg, '/clock', self._on_clock, 10)
-        self.create_timer(0.5, self._check_clock,
-                          clock=Clock(clock_type=ClockType.STEADY_TIME))
+        self.steady = Clock(clock_type=ClockType.STEADY_TIME)
+        self.create_timer(0.5, self._check_clock, clock=self.steady)
+
+        # 종료 처리: 끝나면 0을 final_zero_sec(wall) 동안 보낸 뒤 노드 종료
+        self.final_stop = FinalStop(mission.final_zero_sec)
 
         # sim time 타이머
         self.create_timer(0.1, self._tick)
@@ -149,7 +153,8 @@ class TaskManagerNode(Node):
                 localization_active=self.lifecycle_active[LIFECYCLE_SERVICES[0]],
                 navigation_active=self.lifecycle_active[LIFECYCLE_SERVICES[1]],
                 nav_server_ready=self.nav_client.server_is_ready(),
-                map_odom_stamp=self._map_odom_stamp()))
+                map_odom_stamp=self._map_odom_stamp(),
+                cmd_vel_other_publishers=max(0, self.count_publishers('/cmd_vel') - 1)))
         elif state == State.VERIFY_ARRIVAL:
             self._dispatch(sm.PoseSample(now=now, pose=self._map_base_pose(),
                                          map_odom_stamp=self._map_odom_stamp()))
@@ -202,6 +207,17 @@ class TaskManagerNode(Node):
         self.selector.select(source_for(state), self._now())
         if state != prev:
             self.get_logger().info(f'{prev.value} -> {state.value}')
+        if state in TERMINAL_STATES and not self.final_stop.started:
+            self.final_stop.start(time.monotonic())
+            self.get_logger().info(f'sending zero for {self.mission.final_zero_sec} s, then exit')
+            self.create_timer(0.1, self._final_stop_tick, clock=self.steady)
+
+    def _final_stop_tick(self):
+        # sim time 타이머와 별개로 wall time으로 0 발행 (/clock이 멈춰도 동작)
+        self.cmd_pub.publish(Twist())
+        if self.final_stop.should_exit(time.monotonic()):
+            self.get_logger().info('final stop done, exiting')
+            raise NodeExit()
 
     def _execute(self, cmd):
         if isinstance(cmd, sm.PublishTargetClass):

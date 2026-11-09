@@ -25,7 +25,17 @@ def test_defaults():
     assert m.standoff_list == [0.25, 0.22, 0.28]
     assert m.align_sm_timeout_code == 'ALIGN_TIMEOUT'
     assert m.grasp_timeout_code == 'UNKNOWN'
+    assert m.ready_min_wait_sec == 1.0
+    assert m.final_zero_sec == 1.0
     assert warnings == []
+
+
+@pytest.mark.parametrize('key', ['ready_min_wait_sec', 'final_zero_sec'])
+def test_non_negative_values(key):
+    with pytest.raises(ValueError, match=key):
+        mission_from_dict(base_params(**{key: -0.1}))
+    m, _ = mission_from_dict(base_params(**{key: 0.0}))
+    assert getattr(m, key) == 0.0
 
 
 @pytest.mark.parametrize('missing', ['goal.x', 'goal.y', 'goal.yaw', 'target_class'])

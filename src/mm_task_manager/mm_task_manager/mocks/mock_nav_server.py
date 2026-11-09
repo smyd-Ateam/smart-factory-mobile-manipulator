@@ -7,6 +7,7 @@ mode:
   hang                끝나지 않음 (취소는 받아들임)
   hang_ignore_cancel  끝나지 않고, 취소 요청에 응답도 하지 않음
 실행 중에는 /nav2/cmd_vel로 linear.x = cmd_vx를 10 Hz 발행 (cmd_stop_after_sec 뒤 중단, -1이면 계속).
+끝난 뒤에도 cmd_after_finish_sec 동안 계속 발행 (S11).
 시간은 wall time 기준 (/clock 정지 시험에서도 동작하도록).
 """
 
@@ -30,6 +31,10 @@ class MockNavServer(Node):
         self.duration = self.declare_parameter('duration_sec', 3.0).value
         self.cmd_vx = self.declare_parameter('cmd_vx', 0.11).value
         self.cmd_stop_after = self.declare_parameter('cmd_stop_after_sec', -1.0).value
+        # 목표가 끝난 뒤에도 /nav2/cmd_vel을 이 시간(wall) 동안 계속 발행 (S11)
+        self.cmd_after_finish = self.declare_parameter('cmd_after_finish_sec', 0.0).value
+        self.extra_until = 0.0
+        self.create_timer(0.1, self._extra_cmd)
         self.cmd_pub = self.create_publisher(Twist, '/nav2/cmd_vel', 10)
         self.closing = False
         self.never = Future()       # 완료되지 않는 Future (취소 무응답용)
@@ -41,6 +46,12 @@ class MockNavServer(Node):
             cancel_callback=self._on_cancel,
             callback_group=ReentrantCallbackGroup())
         self.get_logger().info(f'mode {self.mode}')
+
+    def _extra_cmd(self):
+        if time.monotonic() < self.extra_until:
+            msg = Twist()
+            msg.linear.x = self.cmd_vx
+            self.cmd_pub.publish(msg)
 
     def _on_goal(self, goal):
         self.goal_count += 1
@@ -70,6 +81,7 @@ class MockNavServer(Node):
                 msg.linear.x = self.cmd_vx
                 self.cmd_pub.publish(msg)
             time.sleep(0.1)
+        self.extra_until = time.monotonic() + self.cmd_after_finish
         if self.mode == 'aborted':
             goal_handle.abort()
         else:

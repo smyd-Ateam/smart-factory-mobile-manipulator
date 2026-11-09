@@ -17,6 +17,8 @@ class Mission:
     nav_only: bool = True
 
     ready_timeout_sec: float = 30.0
+    ready_min_wait_sec: float = 1.0       # DDS discovery 대기 (다른 /cmd_vel 발행자 확인)
+    final_zero_sec: float = 1.0           # 끝난 뒤 /cmd_vel 0을 보내는 시간, 그 뒤 노드 종료
     tf_max_age_sec: float = 0.5           # TODO: 3단계 측정 후 조정
 
     nav_timeout_sec: float = 90.0
@@ -50,7 +52,8 @@ class Mission:
 _REQUIRED = {'goal.x': 'goal_x', 'goal.y': 'goal_y', 'goal.yaw': 'goal_yaw',
              'target_class': 'target_class'}
 
-_FLOAT_FIELDS = ('goal_x', 'goal_y', 'goal_yaw', 'ready_timeout_sec', 'tf_max_age_sec',
+_FLOAT_FIELDS = ('goal_x', 'goal_y', 'goal_yaw', 'ready_timeout_sec', 'ready_min_wait_sec',
+                 'final_zero_sec', 'tf_max_age_sec',
                  'nav_timeout_sec', 'cancel_timeout_sec', 'settle_sec', 'arrival_xy_tol',
                  'arrival_yaw_tol', 'cmd_rate_hz', 'cmd_input_timeout_sec',
                  'clock_watchdog_sec', 'align_timeout_sec', 'align_margin_sec',
@@ -61,7 +64,7 @@ _POSITIVE_FIELDS = ('ready_timeout_sec', 'tf_max_age_sec', 'nav_timeout_sec',
                     'cmd_input_timeout_sec', 'clock_watchdog_sec', 'align_timeout_sec',
                     'grasp_timeout_sec', 'target_pose_max_age_sec')
 
-_NON_NEGATIVE_FIELDS = ('settle_sec', 'align_margin_sec')
+_NON_NEGATIVE_FIELDS = ('settle_sec', 'align_margin_sec', 'ready_min_wait_sec', 'final_zero_sec')
 
 
 def _param_names():

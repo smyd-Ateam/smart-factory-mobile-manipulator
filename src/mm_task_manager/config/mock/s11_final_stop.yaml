@@ -1,0 +1,5 @@
+# S11 종료 후 정지: Nav가 끝난 뒤에도 /nav2/cmd_vel 0.11을 5 s 더 발행
+# → /cmd_vel은 끝난 뒤 0만 약 1 s 나오고 task_manager 종료, 이후 /cmd_vel 발행 없음
+mock_nav_server:
+  ros__parameters:
+    cmd_after_finish_sec: 5.0

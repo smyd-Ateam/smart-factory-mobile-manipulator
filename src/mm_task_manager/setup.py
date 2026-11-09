@@ -31,6 +31,7 @@ setup(
             'mock_tf = mm_task_manager.mocks.mock_tf:main',
             'mock_nav_server = mm_task_manager.mocks.mock_nav_server:main',
             'cmd_recorder = mm_task_manager.mocks.cmd_recorder:main',
+            'mock_cmd_publisher = mm_task_manager.mocks.mock_cmd_publisher:main',
         ],
     },
 )

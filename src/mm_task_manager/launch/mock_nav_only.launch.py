@@ -34,6 +34,7 @@ def _setup(context):
         node('mock_lifecycle'),
         node('mock_tf'),
         node('mock_nav_server'),
+        node('mock_cmd_publisher'),
         node('cmd_recorder', {'csv_path': os.path.join(out_dir, scenario + '.csv')}),
         node('task_manager', {'result_log_path': result_log}),
     ]

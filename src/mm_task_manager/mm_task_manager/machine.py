@@ -47,6 +47,7 @@ class ReadyStatus:
     navigation_active: Optional[bool]
     nav_server_ready: bool
     map_odom_stamp: Optional[float]         # None = 조회 실패
+    cmd_vel_other_publishers: int = 0       # 자기 말고 /cmd_vel 발행자 수
 
 
 @dataclass(frozen=True)
@@ -190,6 +191,8 @@ class TaskMachine:
 
     def _wait_ready(self, ev):
         if isinstance(ev, ReadyStatus):
+            if ev.now - self._start_time < self.m.ready_min_wait_sec:
+                return []                   # discovery 대기
             reason = self._not_ready_reason(ev)
             if reason is None:
                 return self._send_nav(ev.now)
@@ -277,6 +280,8 @@ class TaskMachine:
     # ---- 도우미 ----
 
     def _not_ready_reason(self, ev):
+        if ev.cmd_vel_other_publishers > 0:
+            return codes.CMD_VEL_CONFLICT
         if ev.localization_active is not True or ev.navigation_active is not True:
             return codes.LIFECYCLE_INACTIVE
         if not ev.nav_server_ready:

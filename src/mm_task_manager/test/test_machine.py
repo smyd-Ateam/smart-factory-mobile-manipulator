@@ -104,6 +104,9 @@ def test_ready_sends_nav_goal():
     (dict(nav_server_ready=False), codes.NAV_SERVER_UNAVAILABLE),
     (dict(map_odom_stamp=None), codes.TF_STALE),
     (dict(map_odom_stamp=0.0), codes.TF_STALE),                   # now=1.0, 1 s 지남
+    (dict(cmd_vel_other_publishers=1), codes.CMD_VEL_CONFLICT),   # 이전 실행 노드가 남아 있음
+    # 다른 문제와 겹치면 충돌을 먼저 보고 (남은 노드 확인이 가장 중요)
+    (dict(cmd_vel_other_publishers=2, nav_server_ready=False), codes.CMD_VEL_CONFLICT),
 ])
 def test_not_ready_then_timeout(overrides, detail):
     m = make()
@@ -117,6 +120,26 @@ def test_not_ready_then_timeout(overrides, detail):
     assert (rec['error_code'], rec['detail'], rec['failed_stage']) == \
         (codes.NAV_NOT_READY, detail, 'WAIT_READY')
     assert of_type(cmds, SendNavGoal) == []
+
+
+def test_conflict_cleared_before_timeout_starts():
+    # 이전 노드가 종료 중이었다가 사라지면 시작한다
+    m = make()
+    m.handle(Start(now=0.0))
+    assert m.handle(ready(1.0, cmd_vel_other_publishers=1)) == []
+    cmds = m.handle(ready(2.0, cmd_vel_other_publishers=0))
+    assert m.state == State.NAVIGATE
+    assert len(of_type(cmds, SendNavGoal)) == 1
+
+
+def test_ready_needs_min_wait_for_discovery():
+    # DDS discovery 전에 다른 /cmd_vel 발행자를 못 보고 시작하지 않도록 최소 1 s 대기
+    m = make()
+    m.handle(Start(now=0.0))
+    assert m.handle(ready(0.9)) == []
+    assert m.state == State.WAIT_READY
+    m.handle(ready(1.0))
+    assert m.state == State.NAVIGATE
 
 
 def test_ready_timeout_without_any_status():

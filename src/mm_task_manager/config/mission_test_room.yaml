@@ -14,7 +14,8 @@ task_manager:
 
     # 시작 확인
     ready_timeout_sec: 30.0
-    tf_max_age_sec: 0.5          # TODO: 3단계에서 AMCL TF 측정 후 조정
+    ready_min_wait_sec: 1.0      # DDS discovery 대기 (다른 /cmd_vel 발행자 확인)
+    tf_max_age_sec: 0.5          # AMCL map→odom은 10 Hz, stamp가 +1.0 s 미래 (2026-11-09 측정) → 멈춤은 약 1.5 s 뒤 감지
 
     # 이동 / 도착 확인
     nav_timeout_sec: 90.0
@@ -46,6 +47,9 @@ task_manager:
 
     # 관측 자세
     observe_pose_required: false            # TODO(B, C): 담당 정해질 때까지 건너뜀
+
+    # 종료: 끝나면 /cmd_vel 0을 이 시간(wall) 동안 보낸 뒤 노드 종료 (DiffDrive는 마지막 명령 0을 유지)
+    final_zero_sec: 1.0
 
     # 결과 기록 (JSON 한 줄씩)
     result_log_path: ~/.ros/mm_task_manager/results.jsonl
