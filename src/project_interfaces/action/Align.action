@@ -1,0 +1,15 @@
+# Goal
+string target_class        # 정렬할 물체 종류 (YOLO 클래스 이름)
+float64 standoff_m         # 물체 앞에서 멈출 거리 (m)
+float64 timeout_sec        # 제한 시간 (s)
+---
+# Result
+bool success
+string error_code          # 실패 시 5.3 실패 코드 이름, 성공 시 빈 문자열
+float64 final_range_error_m
+float64 final_bearing_error_rad
+---
+# Feedback
+bool target_visible
+float64 range_error_m
+float64 bearing_error_rad
