@@ -7,15 +7,18 @@ interfaces.md 와 같은 토픽으로 발행한다.
 발행: /perception/detections, /camera/depth/image_raw, /camera/camera_info,
       TF base_link → camera_optical_frame (static)
 RViz 확인용: TF odom → base_link, /servoing/mock_markers (차체, 물체, 목표 거리 원)
+시험용: /servoing/mock_object_in_base (실제 물체 위치, base_link 기준),
+        /servoing/mock_reset (std_srvs/Trigger, robot_start 파라미터 위치로 되돌림)
 """
 import math
 from collections import deque
 
 import numpy as np
 import rclpy
-from geometry_msgs.msg import Point, TransformStamped, Twist
+from geometry_msgs.msg import Point, PointStamped, TransformStamped, Twist
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, Image
+from std_srvs.srv import Trigger
 from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
 from visualization_msgs.msg import Marker, MarkerArray
@@ -60,6 +63,8 @@ class MockSceneNode(Node):
         self.publish_static_tf()
         self.tf_pub = TransformBroadcaster(self)
         self.marker_pub = self.create_publisher(MarkerArray, '/servoing/mock_markers', 10)
+        self.truth_pub = self.create_publisher(PointStamped, '/servoing/mock_object_in_base', 10)
+        self.create_service(Trigger, '/servoing/mock_reset', self.on_reset)
 
         self.sim_dt = 0.01
         self.create_timer(self.sim_dt, self.on_sim)
@@ -71,6 +76,14 @@ class MockSceneNode(Node):
     def on_cmd(self, msg):
         # Gazebo DiffDrive와 같이 마지막 명령을 계속 유지한다.
         self.cmd = (msg.linear.x, msg.angular.z)
+
+    def on_reset(self, request, response):
+        self.x, self.y, self.yaw = self.get_parameter('robot_start').value
+        self.cmd = (0.0, 0.0)
+        self.pending.clear()
+        response.success = True
+        response.message = f'pose=({self.x:.3f}, {self.y:.3f}, {self.yaw:.3f})'
+        return response
 
     def on_sim(self):
         self.x, self.y, self.yaw = step_unicycle(
@@ -211,6 +224,12 @@ class MockSceneNode(Node):
         line.points = [Point(x=self.x, y=self.y, z=bh), Point(x=self.obj[0], y=self.obj[1], z=self.obj[2])]
 
         self.marker_pub.publish(MarkerArray(markers=[body, obj, ring, line]))
+
+        truth = PointStamped()
+        truth.header.stamp = stamp
+        truth.header.frame_id = base
+        truth.point.x, truth.point.y, truth.point.z = self.p_base()
+        self.truth_pub.publish(truth)
 
     def on_log(self):
         e_r, e_b = true_error(self.p_base(), self.get_parameter('standoff_m').value)

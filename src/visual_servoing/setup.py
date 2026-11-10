@@ -24,6 +24,7 @@ setup(
         'console_scripts': [
             'align_node = visual_servoing.align_node:main',
             'mock_scene_node = visual_servoing.mock_scene_node:main',
+            'mock_trials = visual_servoing.mock_trials:main',
         ],
     },
 )
