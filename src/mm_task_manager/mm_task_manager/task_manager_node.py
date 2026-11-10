@@ -29,7 +29,7 @@ from mm_task_manager.mission import Mission, mission_from_dict
 from mm_task_manager.result_log import append_jsonl
 from mm_task_manager.final_stop import FinalStop
 from mm_task_manager.run import NodeExit, run
-from mm_task_manager.states import TERMINAL_STATES, State
+from mm_task_manager.states import TERMINAL_STATES, State, StateReporter
 
 LIFECYCLE_SERVICES = ('/lifecycle_manager_localization/is_active',
                       '/lifecycle_manager_navigation/is_active')
@@ -83,6 +83,10 @@ class TaskManagerNode(Node):
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.class_pub = self.create_publisher(String, '/perception/target_class', latched)
+        # 현재 단계 이름 (interfaces.md v0.14 3장): 바뀔 때만 발행, transient_local
+        self.state_pub = self.create_publisher(String, '/task_manager/state', latched)
+        self.state_reporter = StateReporter()
+        self._report_state()
         self.create_subscription(Twist, '/nav2/cmd_vel',
                                  lambda msg: self.selector.update(NAV, msg, self._now()), 10)
         self.create_subscription(Twist, '/servoing/cmd_vel',
@@ -207,10 +211,16 @@ class TaskManagerNode(Node):
         self.selector.select(source_for(state), self._now())
         if state != prev:
             self.get_logger().info(f'{prev.value} -> {state.value}')
+        self._report_state()
         if state in TERMINAL_STATES and not self.final_stop.started:
             self.final_stop.start(time.monotonic())
             self.get_logger().info(f'sending zero for {self.mission.final_zero_sec} s, then exit')
             self.create_timer(0.1, self._final_stop_tick, clock=self.steady)
+
+    def _report_state(self):
+        name = self.state_reporter.update(self.machine.state)
+        if name is not None:
+            self.state_pub.publish(String(data=name))
 
     def _final_stop_tick(self):
         # sim time 타이머와 별개로 wall time으로 0 발행 (/clock이 멈춰도 동작)

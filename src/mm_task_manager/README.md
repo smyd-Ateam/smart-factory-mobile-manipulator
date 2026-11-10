@@ -22,7 +22,7 @@ ros2 launch mm_task_manager task_manager.launch.py mission:=<미션 YAML>
 ros2 launch mm_task_manager mock_nav_only.launch.py scenario:=s1_normal out_dir:=<결과 폴더>
 ```
 
-mock 결과: `<out_dir>/<scenario>.jsonl` (상태머신 결과), `<out_dir>/<scenario>.csv` (`/cmd_vel` 기록)
+mock 결과: `<out_dir>/<scenario>.jsonl` (상태머신 결과), `<out_dir>/<scenario>.csv` (`/cmd_vel`, `/task_manager/state` 기록)
 
 | 시나리오 | 내용 | 기대 결과 |
 |---|---|---|
@@ -35,19 +35,23 @@ mock 결과: `<out_dir>/<scenario>.jsonl` (상태머신 결과), `<out_dir>/<sce
 | `s7_cmd_stop` | 이동 중 `/nav2/cmd_vel` 끊김 | 0.5 s 안에 `/cmd_vel` 0, 이후 SUCCEEDED |
 | `s8a_reject`, `s8b_aborted` | 목표 거부, ABORTED | `NAV_FAILED` / `rejected`, `aborted`, 재시도 없음 |
 | `s9_clock_stop` | `/clock` 정지 | `UNKNOWN` / `clock_stopped`, `aborted: true`, 취소 요청 |
+| `s10_cmd_vel_conflict` | 다른 `/cmd_vel` 발행자 있음 | `NAV_NOT_READY` / `cmd_vel_conflict`, 목표 안 보냄 |
+| `s11_final_stop` | Nav가 끝난 뒤에도 `/nav2/cmd_vel` 발행 | 끝난 뒤 `/cmd_vel`은 0만, 약 1 s 뒤 `task_manager` 종료 |
 
-mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF), `mock_nav_server`(`/navigate_to_pose`), `cmd_recorder`(`/cmd_vel` CSV)
+mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF), `mock_nav_server`(`/navigate_to_pose`), `mock_cmd_publisher`(충돌용 `/cmd_vel`), `cmd_recorder`(`/cmd_vel`, `/task_manager/state` CSV). `task_manager`는 2 s 늦게 시작한다
 
 ## 노드 `task_manager`
 
 | 구분 | 이름 |
 |---|---|
 | 구독 | `/nav2/cmd_vel`, `/servoing/cmd_vel`, `/clock`, TF (`map→odom`, `map→base_link`) |
-| 발행 | `/cmd_vel` (10 Hz, 선택한 입력 또는 0), `/perception/target_class` (`transient_local`) |
+| 발행 | `/cmd_vel` (10 Hz, 선택한 입력 또는 0), `/perception/target_class` (`transient_local`), `/task_manager/state` (`std_msgs/msg/String`, 현재 단계 이름, 바뀔 때만 발행, `transient_local`, interfaces.md v0.14 3장) |
 | 서비스 클라이언트 | `/lifecycle_manager_localization/is_active`, `/lifecycle_manager_navigation/is_active` |
 | 액션 클라이언트 | `/navigate_to_pose` |
 
 - 취소 요청이 거부(REJECTED)되면 취소 완료로 보지 않고 `cancel_timeout_sec`까지 기다린다 (목표가 계속 돌 수 있으므로).
+- 시작 확인에서 자기 말고 `/cmd_vel` 발행자가 있으면 `ready_timeout_sec`까지 기다린 뒤 `NAV_NOT_READY` / `cmd_vel_conflict`로 끝낸다. 이전 실행 노드가 남아 0을 섞어 보내면 Nav2가 `Failed to make progress`로 실패하기 때문 (2026-11-09 확인). discovery를 기다리려고 시작 후 `ready_min_wait_sec`(1 s) 동안은 준비 판정을 하지 않는다.
+- 끝나면(SUCCEEDED, FAILED, 실행 중단 모두) `/cmd_vel` 0을 `final_zero_sec`(1 s, wall time) 동안 보낸 뒤 노드가 스스로 종료한다. DiffDrive가 마지막 명령(0)을 유지하므로 차체는 서 있다 (실제 시뮬에서 종료 후 5 s odom 속도 0 확인).
 - 종료(Ctrl-C) 시 `/cmd_vel` 0을 한 번 보낸다.
 
 ## 구조
@@ -69,12 +73,27 @@ mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF
 
 ## 테스트
 
+단위 테스트 (순수 로직, ROS 없이):
+
 ```bash
 cd src/mm_task_manager
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q test
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q test --ignore=test/launch
 ```
 
-`~/.local`에 pytest를 따로 설치한 환경에서는 ROS의 `launch_testing` 플러그인과 충돌하므로 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`을 붙인다 (`visual_servoing` README 참고).
+`~/.local`에 pytest를 따로 설치한 환경에서는 ROS의 `launch_testing` 플러그인과 충돌하므로 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`을 붙인다 (`visual_servoing` README 참고). `test/launch`는 launch_testing 플러그인이 있어야 하므로 제외한다.
+
+mock 시나리오 S1~S11 자동 시험 (launch_testing, 약 3분):
+
+```bash
+PYTHONNOUSERSITE=1 colcon test --packages-select mm_task_manager
+PYTHONNOUSERSITE=1 colcon test-result --verbose
+```
+
+- 시나리오마다 mock 노드와 `task_manager`를 띄우고, `task_manager`가 스스로 끝나기를 45 s까지만 기다린다 (멈춘 시나리오가 전체를 막지 않음)
+- 확인: 결과 기록 값, `/task_manager/state` 단계 순서, 0이 아닌 `/cmd_vel`은 NAVIGATE 동안에만, 끝난 뒤 0만 약 1 s 발행 후 종료, 시나리오별 조건
+- 마지막 결과: `~/.ros/mm_task_manager/launch_test/<시나리오>/` (`result.jsonl`, `record.csv`)
+- JUnit 결과(`build/mm_task_manager/pytest.xml`)에는 launch 시험 파일 전체가 테스트 1개로 나온다. 실패하면 `log/latest_test/mm_task_manager/stdout_stderr.log`에 시나리오별 실패가 나온다
+- `/task_manager/state`의 IDLE은 시작 직후 약 0.1 s만 유지되고 depth 1 `transient_local`이라, 늦게 연결된 구독자는 못 받을 수 있다
 
 ## 실패 코드
 
@@ -115,4 +134,3 @@ Nav2가 SUCCEEDED를 돌려줘도 `map→base_link`를 목표와 비교한다 (�
 | 시도별 `standoff_m` | `standoff_list` (0.22, 0.28은 임시 자리값) | B |
 | 관측 자세 담당 | `observe_pose_required` | B, C |
 | Align/Grasp 액션 타입 | `project_interfaces` 생성 전에는 `nav_only: true` | B, D |
-| 상태 토픽 `/task_manager/state` (현재 상태 발행, 시험 · 모니터링용) | interfaces.md v0.14에 먼저 추가한 뒤 구현. 그 전까지 mock 시험은 JSONL `stage_durations`로 상태 구간 계산 | A |

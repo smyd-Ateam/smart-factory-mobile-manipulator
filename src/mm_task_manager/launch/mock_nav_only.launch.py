@@ -1,14 +1,15 @@
 """mock 시나리오 실행 (Gazebo · Nav2 없음, nav_only).
 
 ros2 launch mm_task_manager mock_nav_only.launch.py scenario:=s1_normal out_dir:=<결과 폴더>
-결과: <out_dir>/<scenario>.jsonl (상태머신 결과), <out_dir>/<scenario>.csv (/cmd_vel 기록)
+결과: <out_dir>/<scenario>.jsonl (상태머신 결과),
+      <out_dir>/<scenario>.csv (/cmd_vel, /task_manager/state 기록)
 """
 
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, TimerAction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -36,7 +37,8 @@ def _setup(context):
         node('mock_nav_server'),
         node('mock_cmd_publisher'),
         node('cmd_recorder', {'csv_path': os.path.join(out_dir, scenario + '.csv')}),
-        node('task_manager', {'result_log_path': result_log}),
+        # recorder가 IDLE부터 받도록 task_manager는 2 s(wall) 뒤에 시작
+        TimerAction(period=2.0, actions=[node('task_manager', {'result_log_path': result_log})]),
     ]
 
 

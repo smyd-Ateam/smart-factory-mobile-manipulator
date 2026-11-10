@@ -1,7 +1,7 @@
 # S9 /clock 정지: 이동 중 /clock 멈춤 → UNKNOWN / clock_stopped, aborted true, 취소 요청
 mock_clock:
   ros__parameters:
-    stop_after_sec: 4.0
+    stop_after_sec: 6.0   # 이동 시작(약 3.3 s) 뒤에 멈춤
 mock_nav_server:
   ros__parameters:
     duration_sec: 10.0
