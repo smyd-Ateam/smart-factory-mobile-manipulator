@@ -3,11 +3,13 @@ task_manager:
   ros__parameters:
     use_sim_time: true
 
-    # 미션
-    goal.x: 1.0        # TODO: 물체 배치 정해지면 수정 (map 기준, m)
-    goal.y: 0.0
-    goal.yaw: 0.0      # rad
+    # 미션: 이동 목표는 goal.{x,y,yaw}(직접 지정)와 object.{x,y}(물체 위치) 중 정확히 하나
+    # object.*면 물체에서 standoff_list[0] + nav_standoff_margin_m 떨어져 물체를 바라보는 목표를
+    # 출발 위치 → 물체 방향으로 계산한다 (interfaces.md 5.5)
+    object.x: 1.35     # TODO: 물체 배치 정해지면 수정 (map 기준, m). 스폰 (0, 0)에서 목표 (1.0, 0, 0)
+    object.y: 0.0
     target_class: block
+    nav_standoff_margin_m: 0.10   # D 제안: standoff_m보다 0.10 m 이상 멀리
 
     # project_interfaces(Align/Grasp) 생성 전에는 true: 도착 확인까지만 하고 끝냄
     nav_only: true

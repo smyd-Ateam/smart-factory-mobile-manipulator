@@ -1,10 +1,11 @@
 """시험용 TF: map→odom (항등, stop_after_sec 뒤 발행 중단), odom→base_footprint (고정 위치),
 base_footprint→base_link (항등). 시각은 sim time. 차체는 움직이지 않는다.
+/mock/robot_pose(시험 전용, map 기준 PoseStamped)를 받으면 그 위치로 옮긴다 (mock_nav_server teleport).
 """
 
 import math
 
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import PoseStamped, TransformStamped
 from rclpy.node import Node
 from tf2_ros import TransformBroadcaster
 
@@ -33,7 +34,15 @@ class MockTf(Node):
         self.stop_after = self.declare_parameter('map_odom_stop_after_sec', -1.0).value
         self.stopped = False
         self.br = TransformBroadcaster(self)
+        self.create_subscription(PoseStamped, '/mock/robot_pose', self._on_pose, 10)
         self.create_timer(0.1, self._publish)
+
+    def _on_pose(self, msg):
+        # map→odom이 항등이라 map 위치를 그대로 odom→base_footprint로 쓴다
+        q = msg.pose.orientation
+        self.x, self.y = msg.pose.position.x, msg.pose.position.y
+        self.yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+        self.get_logger().info(f'teleported to ({self.x:.3f}, {self.y:.3f}, {self.yaw:.3f})')
 
     def _publish(self):
         now = self.get_clock().now()

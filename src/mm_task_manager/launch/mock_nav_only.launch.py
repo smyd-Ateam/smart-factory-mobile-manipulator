@@ -1,8 +1,10 @@
 """mock 시나리오 실행 (Gazebo · Nav2 없음, nav_only).
 
 ros2 launch mm_task_manager mock_nav_only.launch.py scenario:=s1_normal out_dir:=<결과 폴더>
+S12(goal 모드)는 mission:=<share>/config/mock/mission_goal_mode.yaml 을 같이 준다.
 결과: <out_dir>/<scenario>.jsonl (상태머신 결과),
-      <out_dir>/<scenario>.csv (/cmd_vel, /task_manager/state 기록)
+      <out_dir>/<scenario>.csv (/cmd_vel, /task_manager/state 기록),
+      <out_dir>/<scenario>_goals.csv (mock_nav_server가 받은 이동 목표)
 """
 
 import os
@@ -20,7 +22,9 @@ def _setup(context):
     share = get_package_share_directory(PKG)
     scenario = LaunchConfiguration('scenario').perform(context)
     out_dir = os.path.expanduser(LaunchConfiguration('out_dir').perform(context))
-    files = [os.path.join(share, 'config', 'mission_test_room.yaml'),
+    mission = LaunchConfiguration('mission').perform(context) or os.path.join(
+        share, 'config', 'mission_test_room.yaml')
+    files = [mission,
              os.path.join(share, 'config', 'mock', 'common.yaml'),
              os.path.join(share, 'config', 'mock', scenario + '.yaml')]
     result_log = os.path.join(out_dir, scenario + '.jsonl')
@@ -34,7 +38,7 @@ def _setup(context):
         node('mock_clock', use_sim_time=False),
         node('mock_lifecycle'),
         node('mock_tf'),
-        node('mock_nav_server'),
+        node('mock_nav_server', {'goal_log_path': os.path.join(out_dir, scenario + '_goals.csv')}),
         node('mock_cmd_publisher'),
         node('cmd_recorder', {'csv_path': os.path.join(out_dir, scenario + '.csv')}),
         # recorder가 IDLE부터 받도록 task_manager는 2 s(wall) 뒤에 시작
@@ -47,5 +51,7 @@ def generate_launch_description():
         DeclareLaunchArgument('scenario', default_value='s1_normal',
                               description='config/mock/<scenario>.yaml'),
         DeclareLaunchArgument('out_dir', default_value='~/.ros/mm_task_manager/mock'),
+        DeclareLaunchArgument('mission', default_value='',
+                              description='기본 미션 파일 (비우면 config/mission_test_room.yaml)'),
         OpaqueFunction(function=_setup),
     ])

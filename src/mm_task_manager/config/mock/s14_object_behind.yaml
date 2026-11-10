@@ -1,0 +1,9 @@
+# S14 물체가 뒤쪽: 출발 (1.0, 0) → 물체 (0.0, -0.5), yaw가 -pi 근처
+# → 목표 (0.3130, -0.3435, -2.6779)
+task_manager:
+  ros__parameters:
+    object.x: 0.0
+    object.y: -0.5
+mock_nav_server:
+  ros__parameters:
+    teleport_on_success: true

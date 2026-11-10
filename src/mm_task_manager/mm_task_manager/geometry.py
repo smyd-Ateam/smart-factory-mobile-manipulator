@@ -31,3 +31,19 @@ def tf_fresh(stamp, now, max_age_sec):
     if stamp is None:
         return False
     return now - stamp <= max_age_sec
+
+
+def approach_goal(object_xy, robot_pose, distance, approach_yaw=None):
+    """물체에서 distance만큼 떨어져 물체를 바라보는 목표 (x, y, yaw). 모두 같은 프레임(map).
+
+    접근 방향은 기본으로 출발 위치(robot_pose) → 물체 방향이다 (interfaces.md 5.5).
+    approach_yaw를 주면 그 방향으로 접근한다 (확장용, 미션 YAML에는 아직 없음).
+    차체가 물체 위에 있어 방향을 정할 수 없으면 차체가 바라보는 방향을 쓴다.
+    """
+    ox, oy = object_xy
+    rx, ry, ryaw = robot_pose
+    if approach_yaw is None:
+        dx, dy = ox - rx, oy - ry
+        approach_yaw = math.atan2(dy, dx) if math.hypot(dx, dy) >= 1e-3 else ryaw
+    yaw = wrap_angle(approach_yaw)
+    return (ox - distance * math.cos(yaw), oy - distance * math.sin(yaw), yaw)

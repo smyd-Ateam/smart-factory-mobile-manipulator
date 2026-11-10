@@ -456,6 +456,10 @@ def test_record_contents():
     assert (rec['start_time'], rec['end_time']) == (0.0, 10.5)
     assert rec['stage_durations'] == pytest.approx(
         {'WAIT_READY': 1.0, 'NAVIGATE': 9.0, 'VERIFY_ARRIVAL': 0.5})
+    assert rec['nav_goal_mode'] == 'goal'
+    assert rec['object'] is None
+    assert rec['approach_distance'] is None
+    assert rec['arrival']['object_dist'] is None
 
 
 def test_stage_durations_accumulate_over_realign():
@@ -489,3 +493,94 @@ def test_tokens_are_unique_per_goal():
     cmds = m.handle(AlignResult(now=20.0, token=align_token, success=True))
     grasp_token = of_type(cmds, SendGraspGoal)[0].token
     assert len({nav_token, align_token, grasp_token}) == 3
+
+
+# ---- object 모드: 물체 위치로 이동 목표 계산 (interfaces.md 5.5) ----
+
+OBJECT = (2.0, 1.0)
+START = (1.0, 0.0, 0.3)          # 출발 위치 (map→base_link), yaw는 계산에 안 씀
+D = 0.25 + 0.10                  # standoff_list[0] + nav_standoff_margin_m
+U = (1 / math.sqrt(2), 1 / math.sqrt(2))
+EXPECTED_GOAL = (OBJECT[0] - D * U[0], OBJECT[1] - D * U[1], math.pi / 4)
+
+
+def make_object(**overrides):
+    params = dict(object_x=OBJECT[0], object_y=OBJECT[1], target_class='block',
+                  ready_timeout_sec=30.0, tf_max_age_sec=0.5, nav_timeout_sec=90.0,
+                  settle_sec=0.5)
+    params.update(overrides)
+    return TaskMachine(Mission(**params), run_id='run-obj')
+
+
+def object_to_verify(m):
+    m.handle(Start(now=0.0))
+    cmds = m.handle(ready(1.0, robot_pose=START))
+    goal = of_type(cmds, SendNavGoal)[0]
+    m.handle(NavResult(now=10.0, token=goal.token, status=NAV_SUCCEEDED))
+    assert m.state == State.VERIFY_ARRIVAL
+    return goal
+
+
+def test_object_mode_sends_computed_goal():
+    m = make_object()
+    m.handle(Start(now=0.0))
+    cmds = m.handle(ready(1.0, robot_pose=START))
+    assert m.state == State.NAVIGATE
+    goal = of_type(cmds, SendNavGoal)[0]
+    assert (goal.x, goal.y, goal.yaw) == pytest.approx(EXPECTED_GOAL)
+    assert math.hypot(OBJECT[0] - goal.x, OBJECT[1] - goal.y) == pytest.approx(D)
+
+
+def test_object_mode_uses_first_standoff_and_margin():
+    m = make_object(standoff_list=[0.30, 0.22, 0.28], nav_standoff_margin_m=0.15)
+    m.handle(Start(now=0.0))
+    goal = of_type(m.handle(ready(1.0, robot_pose=(0.0, 1.0, 0.0))), SendNavGoal)[0]
+    assert (goal.x, goal.y, goal.yaw) == pytest.approx((2.0 - 0.45, 1.0, 0.0))
+
+
+def test_object_mode_without_robot_pose_waits_then_tf_stale():
+    # 시작할 때 map→base_link를 못 읽으면 준비 안 됨 (tf_stale), 목표 안 보냄
+    m = make_object()
+    m.handle(Start(now=0.0))
+    assert m.handle(ready(1.0, robot_pose=None)) == []
+    assert m.state == State.WAIT_READY
+    rec = record_of(m.handle(Tick(now=30.1)))
+    assert (rec['error_code'], rec['detail']) == (codes.NAV_NOT_READY, codes.TF_STALE)
+
+
+def test_goal_mode_ignores_robot_pose():
+    m = make()
+    m.handle(Start(now=0.0))
+    goal = of_type(m.handle(ready(1.0, robot_pose=None)), SendNavGoal)[0]
+    assert (goal.x, goal.y, goal.yaw) == GOAL
+
+
+def test_object_mode_arrival_checked_against_computed_goal():
+    m = make_object()
+    object_to_verify(m)
+    cmds = m.handle(PoseSample(now=10.5, pose=EXPECTED_GOAL, map_odom_stamp=10.5))
+    assert m.state == State.SUCCEEDED
+    rec = record_of(cmds)
+    assert rec['goal'] == pytest.approx(list(EXPECTED_GOAL))
+    assert rec['nav_goal_mode'] == 'object'
+    assert rec['object'] == [2.0, 1.0]
+    assert rec['approach_distance'] == pytest.approx(D)
+    assert rec['arrival']['dist'] == pytest.approx(0.0)
+    assert rec['arrival']['object_dist'] == pytest.approx(D)
+
+
+def test_object_mode_standing_at_start_fails_arrival():
+    m = make_object()
+    object_to_verify(m)
+    cmds = m.handle(PoseSample(now=10.5, pose=START, map_odom_stamp=10.5))
+    rec = record_of(cmds)
+    assert (rec['error_code'], rec['detail']) == (codes.NAV_FAILED, codes.ARRIVAL_CHECK)
+    assert rec['arrival']['object_dist'] == pytest.approx(math.hypot(1.0, 1.0))
+
+
+def test_object_mode_failure_before_goal_records_no_goal():
+    m = make_object()
+    m.handle(Start(now=0.0))
+    rec = record_of(m.handle(Tick(now=30.1)))
+    assert rec['goal'] is None
+    assert rec['nav_goal_mode'] == 'object'

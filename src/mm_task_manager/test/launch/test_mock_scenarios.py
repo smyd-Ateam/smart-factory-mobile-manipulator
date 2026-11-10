@@ -1,12 +1,14 @@
-"""mock 시나리오 S1~S11 자동 시험 (launch_testing).
+"""mock 시나리오 S1~S15 자동 시험 (launch_testing).
 
 colcon test로 실행한다 (README 참고). 시나리오마다 mock 노드와 task_manager를 띄우고,
 task_manager가 스스로 끝나기를 SCENARIO_TIMEOUT_SEC까지만 기다린다 (멈춘 시나리오가 전체를 막지 않게).
-끝난 뒤 결과 기록(JSONL)과 /cmd_vel · /task_manager/state 기록(CSV)을 기대값과 비교한다.
+끝난 뒤 결과 기록(JSONL), /cmd_vel · /task_manager/state 기록(CSV),
+mock_nav_server가 받은 이동 목표(CSV)를 기대값과 비교한다.
 """
 
 import csv
 import json
+import math
 import os
 import shutil
 import unittest
@@ -47,7 +49,35 @@ EXPECTED = {
     's10_cmd_vel_conflict': ('FAILED', 'NAV_NOT_READY', 'cmd_vel_conflict', False, False,
                              NOT_READY),
     's11_final_stop': ('SUCCEEDED', '', '', False, False, OK),
+    's12_goal_mode': ('SUCCEEDED', '', '', False, False, OK),
+    's13_object_diagonal': ('SUCCEEDED', '', '', False, False, OK),
+    's14_object_behind': ('SUCCEEDED', '', '', False, False, OK),
+    's15_object_close': ('SUCCEEDED', '', '', False, False, OK),
 }
+
+# 기본 미션 파일 (config/ 기준). 없으면 mission_test_room.yaml (object 모드, 물체 (1.35, 0))
+MISSION_BASE = {'s12_goal_mode': os.path.join('mock', 'mission_goal_mode.yaml')}
+
+# mock_nav_server가 받아야 하는 이동 목표 (x, y, yaw). mock 차체 출발 위치는 common.yaml.
+# object 모드: 물체에서 0.35 m (= standoff_list[0] 0.25 + 0.10), 출발 위치 → 물체 방향
+_D = 0.35
+_GOAL_1M = (1.0, 0.0, 0.0)     # 출발 (1.0, 0) 또는 (0, 0)에서 물체 (1.35, 0)
+
+
+def _approach(obj, start):
+    yaw = math.atan2(obj[1] - start[1], obj[0] - start[0])
+    return (obj[0] - _D * math.cos(yaw), obj[1] - _D * math.sin(yaw), yaw)
+
+
+NAV_GOAL = {name: _GOAL_1M for name in EXPECTED
+            if name not in ('s4_not_ready', 's10_cmd_vel_conflict')}
+NAV_GOAL.update({
+    's4_not_ready': None,                                     # 목표 안 보냄
+    's10_cmd_vel_conflict': None,
+    's13_object_diagonal': _approach((2.0, 1.0), (1.0, 0.0)),   # (1.7525, 0.7525, 0.7854)
+    's14_object_behind': _approach((0.0, -0.5), (1.0, 0.0)),    # (0.3130, -0.3435, -2.6779)
+    's15_object_close': _approach((1.2, 0.0), (1.0, 0.0)),      # (0.85, 0, 0)
+})
 
 
 @pytest.mark.launch_test
@@ -58,7 +88,8 @@ def generate_test_description(scenario):
     out_dir = os.path.join(os.path.expanduser(OUT_ROOT), scenario)
     shutil.rmtree(out_dir, ignore_errors=True)
     os.makedirs(out_dir)
-    files = [os.path.join(share, 'config', 'mission_test_room.yaml'),
+    mission = MISSION_BASE.get(scenario, 'mission_test_room.yaml')
+    files = [os.path.join(share, 'config', mission),
              os.path.join(share, 'config', 'mock', 'common.yaml'),
              os.path.join(share, 'config', 'mock', scenario + '.yaml')]
 
@@ -73,7 +104,7 @@ def generate_test_description(scenario):
         node('mock_clock', use_sim_time=False),
         node('mock_lifecycle'),
         node('mock_tf'),
-        node('mock_nav_server'),
+        node('mock_nav_server', {'goal_log_path': os.path.join(out_dir, 'goals.csv')}),
         node('mock_cmd_publisher'),
         node('cmd_recorder', {'csv_path': os.path.join(out_dir, 'record.csv')}),
         TimerAction(period=START_DELAY_SEC, actions=[task_manager]),
@@ -155,3 +186,28 @@ class TestResult(unittest.TestCase):
             self.assertLessEqual(max(nonzero) - min(nonzero), 1.5 + 0.5 + 0.3)
         if scenario in ('s1_normal', 's2_fake_success', 's7_cmd_stop', 's11_final_stop'):
             self.assertGreater(len(nonzero), 5)
+
+    def test_nav_goal_sent(self, out_dir, scenario):
+        # mock_nav_server가 받은 목표 = 기대값 (map 프레임, 1 mm / 0.001 rad 이내), 재시도 없음
+        with open(os.path.join(out_dir, 'goals.csv')) as f:
+            goals = list(csv.DictReader(f))
+        expected = NAV_GOAL[scenario]
+        if expected is None:
+            self.assertEqual(goals, [])
+            return
+        self.assertEqual(len(goals), 1)
+        g = goals[0]
+        self.assertEqual(g['frame_id'], 'map')
+        self.assertAlmostEqual(float(g['x']), expected[0], delta=1e-3)
+        self.assertAlmostEqual(float(g['y']), expected[1], delta=1e-3)
+        dyaw = (float(g['yaw']) - expected[2] + math.pi) % (2 * math.pi) - math.pi
+        self.assertAlmostEqual(dyaw, 0.0, delta=1e-3)
+
+    def test_nav_goal_mode(self, out_dir, scenario):
+        record, _, _ = _load(out_dir)
+        self.assertEqual(record['nav_goal_mode'], 'goal' if scenario in MISSION_BASE else 'object')
+        if scenario in ('s13_object_diagonal', 's14_object_behind', 's15_object_close'):
+            # teleport로 계산한 목표에 도착 → 물체까지 0.35 m, 물체를 바라봄
+            self.assertAlmostEqual(record['approach_distance'], _D, delta=1e-9)
+            self.assertAlmostEqual(record['arrival']['object_dist'], _D, delta=0.005)
+            self.assertLess(record['arrival']['dist'], 0.005)

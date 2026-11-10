@@ -2,8 +2,8 @@ import math
 
 import pytest
 
-from mm_task_manager.geometry import (arrival_error, arrival_ok, tf_fresh, wrap_angle,
-                                      yaw_from_quaternion)
+from mm_task_manager.geometry import (approach_goal, arrival_error, arrival_ok, tf_fresh,
+                                      wrap_angle, yaw_from_quaternion)
 
 
 def quat_from_yaw(yaw):
@@ -63,3 +63,63 @@ def test_tf_fresh(stamp, now, fresh):
 
 def test_tf_fresh_none_stamp_is_not_fresh():
     assert tf_fresh(None, 10.0, max_age_sec=0.5) is False
+
+
+# ---- approach_goal: 물체에서 distance만큼 떨어진, 물체를 바라보는 목표 ----
+
+def _check_goal_faces_object(goal, obj, distance):
+    gx, gy, gyaw = goal
+    assert math.hypot(obj[0] - gx, obj[1] - gy) == pytest.approx(distance)
+    assert wrap_angle(math.atan2(obj[1] - gy, obj[0] - gx) - gyaw) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_approach_straight_ahead():
+    goal = approach_goal((1.0, 0.0), (0.0, 0.0, 0.0), 0.35)
+    assert goal == pytest.approx((0.65, 0.0, 0.0))
+
+
+@pytest.mark.parametrize('obj, robot', [
+    ((2.0, 1.0), (1.0, 0.0, 0.0)),          # 대각선
+    ((0.0, -0.5), (1.0, 0.0, 0.0)),         # 뒤쪽 (yaw가 -pi 근처)
+    ((-1.0, 0.001), (0.0, 0.0, 0.0)),       # 거의 정반대 (yaw가 +pi 근처)
+    ((1.2, 0.0), (1.0, 0.0, 0.0)),          # 차체가 distance보다 가까움 → 뒤로 물러남
+    ((-2.5, 2.0), (1.5, -1.0, 2.0)),
+])
+def test_approach_distance_and_heading(obj, robot):
+    goal = approach_goal(obj, robot, 0.35)
+    _check_goal_faces_object(goal, obj, 0.35)
+    # 출발 위치 → 물체 방향의 선 위에 있음
+    ux, uy = obj[0] - robot[0], obj[1] - robot[1]
+    assert (goal[0] - robot[0]) * uy - (goal[1] - robot[1]) * ux == pytest.approx(0.0, abs=1e-9)
+
+
+def test_approach_behind_object_yaw():
+    goal = approach_goal((0.0, -0.5), (1.0, 0.0, 0.0), 0.35)
+    assert goal[2] == pytest.approx(math.atan2(-0.5, -1.0))     # 약 -2.678
+    assert goal[0] == pytest.approx(0.0 + 0.35 * 1.0 / math.hypot(1.0, 0.5))
+    assert goal[1] == pytest.approx(-0.5 + 0.35 * 0.5 / math.hypot(1.0, 0.5))
+
+
+def test_approach_close_object_backs_up():
+    goal = approach_goal((1.2, 0.0), (1.0, 0.0, 0.0), 0.35)
+    assert goal == pytest.approx((0.85, 0.0, 0.0))
+
+
+def test_approach_ignores_robot_yaw():
+    a = approach_goal((2.0, 1.0), (1.0, 0.0, 0.0), 0.35)
+    b = approach_goal((2.0, 1.0), (1.0, 0.0, 2.5), 0.35)
+    assert a == pytest.approx(b)
+
+
+def test_approach_robot_on_object_uses_robot_heading():
+    # 방향을 정할 수 없으면 차체가 바라보는 방향으로 접근
+    goal = approach_goal((1.0, 1.0), (1.0, 1.0, math.pi / 2), 0.35)
+    assert goal == pytest.approx((1.0, 0.65, math.pi / 2))
+
+
+def test_approach_yaw_overrides_direction():
+    # 확장용: 접근 방향을 직접 주면 출발 위치와 상관없이 그 방향
+    goal = approach_goal((2.0, 1.0), (1.0, 0.0, 0.0), 0.35, approach_yaw=math.pi)
+    assert goal[:2] == pytest.approx((2.35, 1.0))
+    assert wrap_angle(goal[2] - math.pi) == pytest.approx(0.0)   # pi와 -pi는 같은 방향
+    _check_goal_faces_object(goal, (2.0, 1.0), 0.35)

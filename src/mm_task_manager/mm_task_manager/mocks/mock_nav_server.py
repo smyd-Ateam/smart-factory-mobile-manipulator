@@ -8,12 +8,17 @@ mode:
   hang_ignore_cancel  끝나지 않고, 취소 요청에 응답도 하지 않음
 실행 중에는 /nav2/cmd_vel로 linear.x = cmd_vx를 10 Hz 발행 (cmd_stop_after_sec 뒤 중단, -1이면 계속).
 끝난 뒤에도 cmd_after_finish_sec 동안 계속 발행 (S11).
+받은 목표 (x, y, yaw)는 로그와 goal_log_path(CSV, 비우면 안 씀)에 남긴다.
+teleport_on_success가 true면 성공 직전에 /mock/robot_pose로 목표 위치를 보내 mock_tf 차체를 옮긴다
+(S13~S15: 물체 위치로 계산한 목표에 실제로 도착한 것처럼 만들기 위함. 시험 전용 토픽).
 시간은 wall time 기준 (/clock 정지 시험에서도 동작하도록).
 """
 
+import math
+import os
 import time
 
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import PoseStamped, Twist
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -36,6 +41,15 @@ class MockNavServer(Node):
         self.extra_until = 0.0
         self.create_timer(0.1, self._extra_cmd)
         self.cmd_pub = self.create_publisher(Twist, '/nav2/cmd_vel', 10)
+        self.teleport = self.declare_parameter('teleport_on_success', False).value
+        self.pose_pub = self.create_publisher(PoseStamped, '/mock/robot_pose', 10)
+        path = self.declare_parameter('goal_log_path', '').value
+        self.goal_log = None
+        if path:
+            path = os.path.expanduser(path)
+            os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+            self.goal_log = open(path, 'w', encoding='utf-8')
+            self.goal_log.write('goal,x,y,yaw,frame_id\n')
         self.closing = False
         self.never = Future()       # 완료되지 않는 Future (취소 무응답용)
         self.goal_count = 0
@@ -55,8 +69,15 @@ class MockNavServer(Node):
 
     def _on_goal(self, goal):
         self.goal_count += 1
-        p = goal.pose.pose.position
-        self.get_logger().info(f'goal #{self.goal_count} received ({p.x:.2f}, {p.y:.2f})')
+        p, q = goal.pose.pose.position, goal.pose.pose.orientation
+        yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+        self.get_logger().info(
+            f'goal #{self.goal_count} received ({p.x:.3f}, {p.y:.3f}, {yaw:.3f}) '
+            f'frame {goal.pose.header.frame_id}')
+        if self.goal_log is not None:
+            self.goal_log.write(f'{self.goal_count},{p.x:.6f},{p.y:.6f},{yaw:.6f},'
+                                f'{goal.pose.header.frame_id}\n')
+            self.goal_log.flush()
         return GoalResponse.REJECT if self.mode == 'reject' else GoalResponse.ACCEPT
 
     async def _on_cancel(self, goal_handle):
@@ -85,6 +106,12 @@ class MockNavServer(Node):
         if self.mode == 'aborted':
             goal_handle.abort()
         else:
+            if self.teleport:
+                pose = PoseStamped()
+                pose.header.frame_id = 'map'
+                pose.pose = goal_handle.request.pose.pose
+                self.pose_pub.publish(pose)
+                time.sleep(0.3)                 # mock_tf가 새 위치를 발행할 시간
             goal_handle.succeed()
         self.get_logger().info(f'finished ({self.mode}) at {time.monotonic() - start:.2f} s')
         return result

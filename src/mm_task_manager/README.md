@@ -22,7 +22,9 @@ ros2 launch mm_task_manager task_manager.launch.py mission:=<미션 YAML>
 ros2 launch mm_task_manager mock_nav_only.launch.py scenario:=s1_normal out_dir:=<결과 폴더>
 ```
 
-mock 결과: `<out_dir>/<scenario>.jsonl` (상태머신 결과), `<out_dir>/<scenario>.csv` (`/cmd_vel`, `/task_manager/state` 기록)
+S12(goal 모드)는 `mission:=$(ros2 pkg prefix mm_task_manager)/share/mm_task_manager/config/mock/mission_goal_mode.yaml`을 같이 준다.
+
+mock 결과: `<out_dir>/<scenario>.jsonl` (상태머신 결과), `<out_dir>/<scenario>.csv` (`/cmd_vel`, `/task_manager/state` 기록), `<out_dir>/<scenario>_goals.csv` (`mock_nav_server`가 받은 이동 목표)
 
 | 시나리오 | 내용 | 기대 결과 |
 |---|---|---|
@@ -37,8 +39,32 @@ mock 결과: `<out_dir>/<scenario>.jsonl` (상태머신 결과), `<out_dir>/<sce
 | `s9_clock_stop` | `/clock` 정지 | `UNKNOWN` / `clock_stopped`, `aborted: true`, 취소 요청 |
 | `s10_cmd_vel_conflict` | 다른 `/cmd_vel` 발행자 있음 | `NAV_NOT_READY` / `cmd_vel_conflict`, 목표 안 보냄 |
 | `s11_final_stop` | Nav가 끝난 뒤에도 `/nav2/cmd_vel` 발행 | 끝난 뒤 `/cmd_vel`은 0만, 약 1 s 뒤 `task_manager` 종료 |
+| `s12_goal_mode` | goal 모드 (이동 목표 직접 지정) | SUCCEEDED, `nav_goal_mode` `goal` |
+| `s13_object_diagonal` | 물체 (2.0, 1.0), 출발 (1.0, 0) | 목표 (1.7525, 0.7525, 0.7854), 도착 후 물체까지 0.35 m |
+| `s14_object_behind` | 물체 (0.0, -0.5), 출발 (1.0, 0) | 목표 (0.3130, -0.3435, -2.6779) |
+| `s15_object_close` | 물체 (1.2, 0), 출발 (1.0, 0) | 뒤로 물러나는 목표 (0.85, 0, 0) |
+
+S1~S11은 기본 미션(object 모드, 물체 (1.35, 0))으로 돌고, mock 차체가 (1.0, 0) 근처라 목표는 (1.0, 0, 0)이다.
 
 mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF), `mock_nav_server`(`/navigate_to_pose`), `mock_cmd_publisher`(충돌용 `/cmd_vel`), `cmd_recorder`(`/cmd_vel`, `/task_manager/state` CSV). `task_manager`는 2 s 늦게 시작한다
+
+- `mock_nav_server`의 `teleport_on_success: true`(S13~S15): 성공 직전에 시험 전용 토픽 `/mock/robot_pose`로 목표 위치를 보내고, `mock_tf`가 차체를 그 위치로 옮긴다. 계산한 목표에 실제로 도착한 것처럼 도착 확인까지 시험하기 위함. mock끼리만 쓰는 토픽이라 interfaces.md에는 넣지 않는다
+
+## 이동 목표 (미션 YAML)
+
+`goal.*`와 `object.*` 중 정확히 하나만 쓴다 (둘 다, 둘 다 없음, 일부만 있으면 시작하지 않고 에러).
+
+| 모드 | 파라미터 (map 기준) | 이동 목표 |
+|---|---|---|
+| goal | `goal.x`, `goal.y`, `goal.yaw` | 그대로 보냄 |
+| object | `object.x`, `object.y` | 물체에서 `standoff_list[0]` + `nav_standoff_margin_m`(기본 0.10) 떨어진 곳, 물체를 바라보는 yaw (interfaces.md 5.5) |
+
+- object 모드의 접근 방향은 출발 위치 → 물체 방향이다. 출발 위치는 시작 확인을 통과할 때의 `map → base_link`이고, 목표는 이때 한 번만 계산한다 (재정렬 때 다시 계산하지 않음)
+- 출발 위치를 못 읽으면 시작 확인에서 `tf_stale`로 기다리고, 시간이 지나면 `NAV_NOT_READY`
+- 차체가 물체 위에 있어 방향을 정할 수 없으면(1 mm 미만) 차체가 바라보는 방향으로 접근한다
+- 차체가 이미 물체에 가까우면 뒤로 물러나는 목표가 된다
+- 접근 방향을 직접 정하는 것은 `geometry.approach_goal(..., approach_yaw=...)` 인자만 있고, 미션 YAML 파라미터는 아직 없다 (확장 예정)
+- 도착 확인은 실제로 보낸 목표와 비교한다. 결과 기록에 `goal`(보낸 목표), `nav_goal_mode`, `object`, `approach_distance`, `arrival.object_dist`(도착 후 물체까지 거리)를 남긴다
 
 ## 노드 `task_manager`
 
@@ -82,7 +108,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q test --ignore=test/launch
 
 `~/.local`에 pytest를 따로 설치한 환경에서는 ROS의 `launch_testing` 플러그인과 충돌하므로 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`을 붙인다 (`visual_servoing` README 참고). `test/launch`는 launch_testing 플러그인이 있어야 하므로 제외한다.
 
-mock 시나리오 S1~S11 자동 시험 (launch_testing, 약 3분):
+mock 시나리오 S1~S15 자동 시험 (launch_testing, 약 4분):
 
 ```bash
 PYTHONNOUSERSITE=1 colcon test --packages-select mm_task_manager
@@ -90,8 +116,8 @@ PYTHONNOUSERSITE=1 colcon test-result --verbose
 ```
 
 - 시나리오마다 mock 노드와 `task_manager`를 띄우고, `task_manager`가 스스로 끝나기를 45 s까지만 기다린다 (멈춘 시나리오가 전체를 막지 않음)
-- 확인: 결과 기록 값, `/task_manager/state` 단계 순서, 0이 아닌 `/cmd_vel`은 NAVIGATE 동안에만, 끝난 뒤 0만 약 1 s 발행 후 종료, 시나리오별 조건
-- 마지막 결과: `~/.ros/mm_task_manager/launch_test/<시나리오>/` (`result.jsonl`, `record.csv`)
+- 확인: 결과 기록 값, `/task_manager/state` 단계 순서, 0이 아닌 `/cmd_vel`은 NAVIGATE 동안에만, 끝난 뒤 0만 약 1 s 발행 후 종료, 시나리오별 조건, `mock_nav_server`가 받은 이동 목표(1 mm / 0.001 rad 이내), 이동 목표 모드와 물체까지 거리
+- 마지막 결과: `~/.ros/mm_task_manager/launch_test/<시나리오>/` (`result.jsonl`, `record.csv`, `goals.csv`)
 - JUnit 결과(`build/mm_task_manager/pytest.xml`)에는 launch 시험 파일 전체가 테스트 1개로 나온다. 실패하면 `log/latest_test/mm_task_manager/stdout_stderr.log`에 시나리오별 실패가 나온다
 - `/task_manager/state`의 IDLE은 시작 직후 약 0.1 s만 유지되고 depth 1 `transient_local`이라, 늦게 연결된 구독자는 못 받을 수 있다
 

@@ -1,0 +1,10 @@
+# goal 모드 미션 (S12): 이동 목표를 직접 지정 (map 기준).
+# ROS 파라미터 파일은 앞 파일의 값을 지울 수 없어서, mission_test_room.yaml(object 모드) 대신
+# 이 파일을 기본 미션으로 쓰고 나머지 값은 Mission 기본값을 쓴다.
+task_manager:
+  ros__parameters:
+    use_sim_time: true
+    goal.x: 1.0
+    goal.y: 0.0
+    goal.yaw: 0.0
+    target_class: block

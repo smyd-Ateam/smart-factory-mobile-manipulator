@@ -4,11 +4,12 @@
 시각은 모두 sim time 초(float). /cmd_vel 선택은 cmd_select.source_for(machine.state)로 정한다.
 """
 
+import math
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
 from mm_task_manager import codes
-from mm_task_manager.geometry import arrival_error, arrival_ok, tf_fresh
+from mm_task_manager.geometry import approach_goal, arrival_error, arrival_ok, tf_fresh
 from mm_task_manager.retry import REALIGN, after_grasp_failure, standoff_for
 from mm_task_manager.states import TERMINAL_STATES, State
 
@@ -48,6 +49,7 @@ class ReadyStatus:
     nav_server_ready: bool
     map_odom_stamp: Optional[float]         # None = 조회 실패
     cmd_vel_other_publishers: int = 0       # 자기 말고 /cmd_vel 발행자 수
+    robot_pose: Optional[Tuple[float, float, float]] = None   # map→base_link, object 모드 출발 위치
 
 
 @dataclass(frozen=True)
@@ -158,6 +160,10 @@ class TaskMachine:
         self._standoffs_used = []
         self._arrival = None
         self._start_time = None
+        # 이동 목표 (x, y, yaw): goal 모드는 미션 값, object 모드는 출발할 때 계산 (5.5)
+        self._object_mode = mission.nav_goal_mode == 'object'
+        self._nav_goal = None if self._object_mode else (
+            mission.goal_x, mission.goal_y, mission.goal_yaw)
         self._state_entered = None
         self._durations = {}
 
@@ -195,7 +201,7 @@ class TaskMachine:
                 return []                   # discovery 대기
             reason = self._not_ready_reason(ev)
             if reason is None:
-                return self._send_nav(ev.now)
+                return self._send_nav(ev.now, ev.robot_pose)
             self._ready_reason = reason
             return []
         if isinstance(ev, Tick) and ev.now > self._deadline:
@@ -223,9 +229,11 @@ class TaskMachine:
         if ev.pose is None or not tf_fresh(ev.map_odom_stamp, ev.now, self.m.tf_max_age_sec):
             return self._finish(State.FAILED, ev.now, codes.NAV_FAILED, codes.TF_STALE,
                                 failed_stage=State.VERIFY_ARRIVAL)
-        goal = (self.m.goal_x, self.m.goal_y, self.m.goal_yaw)
-        dist, yaw_err = arrival_error(goal, ev.pose)
-        self._arrival = {'dist': dist, 'yaw_err': yaw_err, 'pose': list(ev.pose)}
+        dist, yaw_err = arrival_error(self._nav_goal, ev.pose)
+        object_dist = (math.hypot(self.m.object_x - ev.pose[0], self.m.object_y - ev.pose[1])
+                       if self._object_mode else None)
+        self._arrival = {'dist': dist, 'yaw_err': yaw_err, 'pose': list(ev.pose),
+                         'object_dist': object_dist}
         if not arrival_ok(dist, yaw_err, self.m.arrival_xy_tol, self.m.arrival_yaw_tol):
             return self._finish(State.FAILED, ev.now, codes.NAV_FAILED, codes.ARRIVAL_CHECK,
                                 failed_stage=State.VERIFY_ARRIVAL)
@@ -288,6 +296,8 @@ class TaskMachine:
             return codes.NAV_SERVER_UNAVAILABLE
         if not tf_fresh(ev.map_odom_stamp, ev.now, self.m.tf_max_age_sec):
             return codes.TF_STALE
+        if self._object_mode and ev.robot_pose is None:
+            return codes.TF_STALE               # 출발 위치(map→base_link)를 못 읽음
         return None
 
     def _new_token(self):
@@ -295,11 +305,14 @@ class TaskMachine:
         self._active_token = self._token
         return self._token
 
-    def _send_nav(self, now):
+    def _send_nav(self, now, robot_pose):
+        if self._object_mode:
+            self._nav_goal = approach_goal((self.m.object_x, self.m.object_y), robot_pose,
+                                           self.m.approach_distance)
         self._enter(State.NAVIGATE, now)
         self._deadline = now + self.m.nav_timeout_sec
-        return [SendNavGoal(token=self._new_token(), x=self.m.goal_x, y=self.m.goal_y,
-                            yaw=self.m.goal_yaw)]
+        x, y, yaw = self._nav_goal
+        return [SendNavGoal(token=self._new_token(), x=x, y=y, yaw=yaw)]
 
     def _send_align(self, now):
         self._enter(State.ALIGN, now)
@@ -335,7 +348,10 @@ class TaskMachine:
         record = {
             'run_id': self.run_id,
             'target_class': self.m.target_class,
-            'goal': [self.m.goal_x, self.m.goal_y, self.m.goal_yaw],
+            'goal': list(self._nav_goal) if self._nav_goal is not None else None,
+            'nav_goal_mode': self.m.nav_goal_mode,
+            'object': [self.m.object_x, self.m.object_y] if self._object_mode else None,
+            'approach_distance': self.m.approach_distance if self._object_mode else None,
             'nav_only': self.m.nav_only,
             'final_state': final_state.value,
             'error_code': error_code,

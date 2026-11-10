@@ -45,15 +45,25 @@ def _stamp_sec(stamp):
     return stamp.sec + stamp.nanosec * 1e-9
 
 
+# 이동 목표 파라미터: goal.*(직접 지정)와 object.*(물체 위치) 중 YAML에 적은 쪽만 넘긴다
+_NAV_TARGET_PARAMS = {'goal.x': 'goal_x', 'goal.y': 'goal_y', 'goal.yaw': 'goal_yaw',
+                      'object.x': 'object_x', 'object.y': 'object_y'}
+
+
 def _declare_mission_params(node):
-    """Mission 필드를 ROS 파라미터로 선언하고 dict로 읽는다."""
-    defaults = {f: getattr(Mission(0.0, 0.0, 0.0, 'x'), f)
-                for f in Mission.__dataclass_fields__}
-    for f in ('goal_x', 'goal_y', 'goal_yaw', 'target_class'):
-        defaults.pop(f)
-    params = {}
-    for name, default in [('goal.x', math.nan), ('goal.y', math.nan), ('goal.yaw', math.nan),
-                          ('target_class', '')] + list(defaults.items()):
+    """Mission 필드를 ROS 파라미터로 선언하고 dict로 읽는다.
+
+    goal.* / object.*는 NaN을 기본값으로 선언하고, NaN(=YAML에 없음)인 항목은 넘기지 않는다.
+    둘 중 정확히 하나인지는 mission_from_dict가 확인한다.
+    """
+    defaults = {f: getattr(Mission('x'), f) for f in Mission.__dataclass_fields__
+                if f not in _NAV_TARGET_PARAMS.values() and f != 'target_class'}
+    params = {'target_class': node.declare_parameter('target_class', '').value}
+    for name in _NAV_TARGET_PARAMS:
+        value = node.declare_parameter(name, math.nan).value
+        if not math.isnan(value):
+            params[name] = value
+    for name, default in defaults.items():
         params[name] = node.declare_parameter(name, default).value
     return params
 
@@ -118,8 +128,13 @@ class TaskManagerNode(Node):
         self.create_timer(0.1, self._tick)
         self.create_timer(1.0 / mission.cmd_rate_hz, self._publish_cmd)
 
+        if mission.nav_goal_mode == 'object':
+            target = (f'object ({mission.object_x}, {mission.object_y}), '
+                      f'approach distance {mission.approach_distance:.3f}')
+        else:
+            target = f'goal ({mission.goal_x}, {mission.goal_y}, {mission.goal_yaw})'
         self.get_logger().info(
-            f'run {run_id}: goal ({mission.goal_x}, {mission.goal_y}, {mission.goal_yaw}), '
+            f'run {run_id}: {target}, '
             f'target_class {mission.target_class}, nav_only {mission.nav_only}')
 
     # ---- 시각 ----
@@ -158,7 +173,8 @@ class TaskManagerNode(Node):
                 navigation_active=self.lifecycle_active[LIFECYCLE_SERVICES[1]],
                 nav_server_ready=self.nav_client.server_is_ready(),
                 map_odom_stamp=self._map_odom_stamp(),
-                cmd_vel_other_publishers=max(0, self.count_publishers('/cmd_vel') - 1)))
+                cmd_vel_other_publishers=max(0, self.count_publishers('/cmd_vel') - 1),
+                robot_pose=self._map_base_pose()))
         elif state == State.VERIFY_ARRIVAL:
             self._dispatch(sm.PoseSample(now=now, pose=self._map_base_pose(),
                                          map_odom_stamp=self._map_odom_stamp()))
@@ -250,7 +266,8 @@ class TaskManagerNode(Node):
         goal.pose.pose.position.y = cmd.y
         goal.pose.pose.orientation.z = math.sin(cmd.yaw / 2.0)
         goal.pose.pose.orientation.w = math.cos(cmd.yaw / 2.0)
-        self.get_logger().info(f'nav goal #{cmd.token}: ({cmd.x}, {cmd.y}, {cmd.yaw})')
+        self.get_logger().info(
+            f'nav goal #{cmd.token}: ({cmd.x:.3f}, {cmd.y:.3f}, {cmd.yaw:.3f})')
         future = self.nav_client.send_goal_async(goal)
         future.add_done_callback(lambda f, t=cmd.token: self._on_nav_accepted(t, f))
 

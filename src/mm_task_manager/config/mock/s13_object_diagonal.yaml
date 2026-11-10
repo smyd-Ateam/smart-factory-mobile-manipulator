@@ -1,0 +1,9 @@
+# S13 물체가 대각선: 출발 (1.0, 0) → 물체 (2.0, 1.0), 거리 0.35
+# → 목표 (1.7525, 0.7525, 0.7854), 도착 후 물체까지 0.35 m
+task_manager:
+  ros__parameters:
+    object.x: 2.0
+    object.y: 1.0
+mock_nav_server:
+  ros__parameters:
+    teleport_on_success: true

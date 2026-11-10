@@ -1,0 +1,5 @@
+# S12 goal 모드: 이동 목표를 직접 지정 (기본 미션 mission_goal_mode.yaml, goal (1.0, 0, 0))
+# → S1과 같이 SUCCEEDED, 결과 기록 nav_goal_mode 'goal'
+mock_tf:
+  ros__parameters:
+    x: 1.0
