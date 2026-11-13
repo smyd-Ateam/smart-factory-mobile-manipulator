@@ -36,19 +36,19 @@ task_manager:
     # 정렬 (D)
     align_timeout_sec: 30.0                 # TODO(D): Align Goal의 timeout_sec 값
     align_margin_sec: 5.0
-    align_sm_timeout_code: ALIGN_TIMEOUT    # TODO(팀): 상태머신 쪽 시간 초과에 이 코드를 써도 되는지
+    align_sm_timeout_code: ALIGN_TIMEOUT    # 상태머신 쪽 시간 초과에도 이 코드 사용 (D 확인)
 
     # 파지 (B)
-    grasp_timeout_sec: 60.0                 # TODO(B): Grasp 제한 시간
+    grasp_timeout_sec: 60.0                 # Grasp 제한 시간 (B 확인)
     grasp_timeout_code: UNKNOWN             # TODO(B): Grasp 시간 초과 코드
-    target_pose_max_age_sec: 1.0            # TODO(C, B): target_pose 신선도 기준
+    target_pose_max_age_sec: 1.0            # target_pose 신선도 기준 (C 확인)
 
     # 재정렬 (interfaces.md 5.2)
     max_realign: 2
     standoff_list: [0.25, 0.22, 0.28]       # 0.25는 B 제안 초기 시험값. 0.22, 0.28은 TODO(B) 임시 자리값
 
     # 관측 자세
-    observe_pose_required: false            # TODO(B, C): 담당 정해질 때까지 건너뜀
+    observe_pose_required: false            # B가 액션으로 처리 예정, 당분간 false
 
     # 종료: 끝나면 /cmd_vel 0을 이 시간(wall) 동안 보낸 뒤 노드 종료 (DiffDrive는 마지막 명령 0을 유지)
     final_zero_sec: 1.0
