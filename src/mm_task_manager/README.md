@@ -12,6 +12,8 @@ PYTHONNOUSERSITE=1 colcon build --packages-select mm_task_manager
 
 `~/.local`에 setuptools를 따로 설치한 환경(예: ultralytics 설치)에서는 시스템 packaging과 충돌해 빌드가 실패하므로 `PYTHONNOUSERSITE=1`을 붙인다.
 
+colcon test 실행 시에도 PYTHONNOUSERSITE=1 필요 (안 붙이면 테스트가 0개 실행되고도 이전 결과로 통과처럼 보일 수 있음)
+
 ## 실행
 
 ```bash
