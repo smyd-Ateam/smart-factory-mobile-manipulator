@@ -1,0 +1,11 @@
+# test_spin_at_goal.py (task_manager 모드) 전용 미션: 스폰 (0, 0, 0)에서 (1.0, 0)에 yaw π로 도착
+# → 도착 후 약 180도 제자리 회전이 필요. 나머지 값은 Mission 기본값
+task_manager:
+  ros__parameters:
+    use_sim_time: true
+    goal.x: 1.0
+    goal.y: 0.0
+    goal.yaw: 3.141592653589793
+    target_class: block
+    nav_only: true
+    result_log_path: ~/.ros/mm_navigation/sim_test/results.jsonl

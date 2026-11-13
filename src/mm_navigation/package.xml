@@ -13,6 +13,14 @@
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>rviz2</exec_depend>
 
+  <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>rclpy</test_depend>
+  <test_depend>tf2_ros</test_depend>
+  <test_depend>nav2_msgs</test_depend>
+  <test_depend>std_msgs</test_depend>
+  <test_depend>mm_task_manager</test_depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>
