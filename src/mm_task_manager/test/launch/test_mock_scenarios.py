@@ -55,13 +55,14 @@ EXPECTED = {
     's15_object_close': ('SUCCEEDED', '', '', False, False, OK),
 }
 
-# 기본 미션 파일 (config/ 기준). 없으면 mission_test_room.yaml (object 모드, 물체 (1.35, 0))
+# 기본 미션 파일 (config/ 기준). 없으면 mission_test_room.yaml (object 모드, 물체 (1.40, 0))
 MISSION_BASE = {'s12_goal_mode': os.path.join('mock', 'mission_goal_mode.yaml')}
 
 # mock_nav_server가 받아야 하는 이동 목표 (x, y, yaw). mock 차체 출발 위치는 common.yaml.
-# object 모드: 물체에서 0.35 m (= standoff_list[0] 0.25 + 0.10), 출발 위치 → 물체 방향
-_D = 0.35
-_GOAL_1M = (1.0, 0.0, 0.0)     # 출발 (1.0, 0) 또는 (0, 0)에서 물체 (1.35, 0)
+# object 모드: 물체에서 0.40 m (= standoff_list[0] 0.25 + margin 0.15), 출발 위치 → 물체 방향
+_D = 0.40
+_GOAL_DEFAULT = (1.0, 0.0, 0.0)    # 출발 (1.0, 0) 또는 (0, 0)에서 물체 (1.40, 0)
+_GOAL_GOAL_MODE = (1.0, 0.0, 0.0)  # S12: mission_goal_mode.yaml
 
 
 def _approach(obj, start):
@@ -69,14 +70,15 @@ def _approach(obj, start):
     return (obj[0] - _D * math.cos(yaw), obj[1] - _D * math.sin(yaw), yaw)
 
 
-NAV_GOAL = {name: _GOAL_1M for name in EXPECTED
+NAV_GOAL = {name: _GOAL_DEFAULT for name in EXPECTED
             if name not in ('s4_not_ready', 's10_cmd_vel_conflict')}
 NAV_GOAL.update({
+    's12_goal_mode': _GOAL_GOAL_MODE,
     's4_not_ready': None,                                     # 목표 안 보냄
     's10_cmd_vel_conflict': None,
-    's13_object_diagonal': _approach((2.0, 1.0), (1.0, 0.0)),   # (1.7525, 0.7525, 0.7854)
-    's14_object_behind': _approach((0.0, -0.5), (1.0, 0.0)),    # (0.3130, -0.3435, -2.6779)
-    's15_object_close': _approach((1.2, 0.0), (1.0, 0.0)),      # (0.85, 0, 0)
+    's13_object_diagonal': _approach((2.0, 1.0), (1.0, 0.0)),   # (1.7172, 0.7172, 0.7854)
+    's14_object_behind': _approach((0.0, -0.5), (1.0, 0.0)),    # (0.3578, -0.3211, -2.6779)
+    's15_object_close': _approach((1.2, 0.0), (1.0, 0.0)),      # (0.80, 0, 0)
 })
 
 
@@ -207,7 +209,7 @@ class TestResult(unittest.TestCase):
         record, _, _ = _load(out_dir)
         self.assertEqual(record['nav_goal_mode'], 'goal' if scenario in MISSION_BASE else 'object')
         if scenario in ('s13_object_diagonal', 's14_object_behind', 's15_object_close'):
-            # teleport로 계산한 목표에 도착 → 물체까지 0.35 m, 물체를 바라봄
+            # teleport로 계산한 목표에 도착 → 물체까지 0.40 m, 물체를 바라봄
             self.assertAlmostEqual(record['approach_distance'], _D, delta=1e-9)
             self.assertAlmostEqual(record['arrival']['object_dist'], _D, delta=0.005)
             self.assertLess(record['arrival']['dist'], 0.005)

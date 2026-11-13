@@ -499,7 +499,7 @@ def test_tokens_are_unique_per_goal():
 
 OBJECT = (2.0, 1.0)
 START = (1.0, 0.0, 0.3)          # 출발 위치 (map→base_link), yaw는 계산에 안 씀
-D = 0.25 + 0.10                  # standoff_list[0] + nav_standoff_margin_m
+D = 0.25 + 0.15                  # standoff_list[0] + nav_standoff_margin_m (기본 0.15)
 U = (1 / math.sqrt(2), 1 / math.sqrt(2))
 EXPECTED_GOAL = (OBJECT[0] - D * U[0], OBJECT[1] - D * U[1], math.pi / 4)
 
@@ -532,10 +532,10 @@ def test_object_mode_sends_computed_goal():
 
 
 def test_object_mode_uses_first_standoff_and_margin():
-    m = make_object(standoff_list=[0.30, 0.22, 0.28], nav_standoff_margin_m=0.15)
+    m = make_object(standoff_list=[0.30, 0.22, 0.28], nav_standoff_margin_m=0.20)
     m.handle(Start(now=0.0))
     goal = of_type(m.handle(ready(1.0, robot_pose=(0.0, 1.0, 0.0))), SendNavGoal)[0]
-    assert (goal.x, goal.y, goal.yaw) == pytest.approx((2.0 - 0.45, 1.0, 0.0))
+    assert (goal.x, goal.y, goal.yaw) == pytest.approx((2.0 - 0.50, 1.0, 0.0))
 
 
 def test_object_mode_without_robot_pose_waits_then_tf_stale():

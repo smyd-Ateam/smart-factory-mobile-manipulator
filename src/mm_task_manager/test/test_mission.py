@@ -124,7 +124,7 @@ def test_config_file_is_valid():
     m, warnings = mission_from_dict(_load_config(CONFIG))
     assert m.standoff_list == [0.25, 0.22, 0.28]
     assert m.nav_goal_mode == 'object'          # 물체 위치로 이동 목표 계산 (5.5)
-    assert (m.object_x, m.object_y) == (1.35, 0.0)
+    assert (m.object_x, m.object_y) == (1.40, 0.0)     # 스폰 (0, 0)에서 목표 (1.0, 0, 0)
     assert warnings == []
 
 
@@ -193,10 +193,10 @@ def test_object_must_be_finite(key, value):
 
 def test_nav_standoff_margin():
     m, _ = mission_from_dict(object_params())
-    assert m.nav_standoff_margin_m == 0.10
-    assert m.approach_distance == pytest.approx(0.25 + 0.10)    # standoff_list[0] + 0.10
-    m, _ = mission_from_dict(object_params(nav_standoff_margin_m=0.15,
+    assert m.nav_standoff_margin_m == 0.15                       # PR #1 D 의견 (0.10 → 0.15)
+    assert m.approach_distance == pytest.approx(0.25 + 0.15)    # standoff_list[0] + 0.15
+    m, _ = mission_from_dict(object_params(nav_standoff_margin_m=0.20,
                                            standoff_list=[0.30, 0.25, 0.35]))
-    assert m.approach_distance == pytest.approx(0.45)
+    assert m.approach_distance == pytest.approx(0.50)
     with pytest.raises(ValueError, match='nav_standoff_margin_m'):
         mission_from_dict(object_params(nav_standoff_margin_m=-0.01))

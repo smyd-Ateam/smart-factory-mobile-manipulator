@@ -7,7 +7,7 @@ task_manager:
     clock_watchdog_sec: 3.0
 mock_tf:
   ros__parameters:
-    x: 1.0          # 목표 위치 (mission_test_room.yaml의 goal)
+    x: 1.0          # mock 차체 위치 = 기본 미션 목표 (1.0, 0, 0)
     y: 0.0
     yaw: 0.0
 mock_nav_server:

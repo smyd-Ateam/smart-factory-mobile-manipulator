@@ -40,11 +40,11 @@ mock 결과: `<out_dir>/<scenario>.jsonl` (상태머신 결과), `<out_dir>/<sce
 | `s10_cmd_vel_conflict` | 다른 `/cmd_vel` 발행자 있음 | `NAV_NOT_READY` / `cmd_vel_conflict`, 목표 안 보냄 |
 | `s11_final_stop` | Nav가 끝난 뒤에도 `/nav2/cmd_vel` 발행 | 끝난 뒤 `/cmd_vel`은 0만, 약 1 s 뒤 `task_manager` 종료 |
 | `s12_goal_mode` | goal 모드 (이동 목표 직접 지정) | SUCCEEDED, `nav_goal_mode` `goal` |
-| `s13_object_diagonal` | 물체 (2.0, 1.0), 출발 (1.0, 0) | 목표 (1.7525, 0.7525, 0.7854), 도착 후 물체까지 0.35 m |
-| `s14_object_behind` | 물체 (0.0, -0.5), 출발 (1.0, 0) | 목표 (0.3130, -0.3435, -2.6779) |
-| `s15_object_close` | 물체 (1.2, 0), 출발 (1.0, 0) | 뒤로 물러나는 목표 (0.85, 0, 0) |
+| `s13_object_diagonal` | 물체 (2.0, 1.0), 출발 (1.0, 0) | 목표 (1.7172, 0.7172, 0.7854), 도착 후 물체까지 0.40 m |
+| `s14_object_behind` | 물체 (0.0, -0.5), 출발 (1.0, 0) | 목표 (0.3578, -0.3211, -2.6779) |
+| `s15_object_close` | 물체 (1.2, 0), 출발 (1.0, 0) | 뒤로 물러나는 목표 (0.80, 0, 0) |
 
-S1~S11은 기본 미션(object 모드, 물체 (1.35, 0))으로 돌고, mock 차체가 (1.0, 0) 근처라 목표는 (1.0, 0, 0)이다.
+S1~S11은 기본 미션(object 모드, 물체 (1.40, 0))으로 돌고, mock 차체가 (1.0, 0) 근처라 목표는 (1.0, 0, 0)이다.
 
 mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF), `mock_nav_server`(`/navigate_to_pose`), `mock_cmd_publisher`(충돌용 `/cmd_vel`), `cmd_recorder`(`/cmd_vel`, `/task_manager/state` CSV). `task_manager`는 2 s 늦게 시작한다
 
@@ -57,7 +57,7 @@ mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF
 | 모드 | 파라미터 (map 기준) | 이동 목표 |
 |---|---|---|
 | goal | `goal.x`, `goal.y`, `goal.yaw` | 그대로 보냄 |
-| object | `object.x`, `object.y` | 물체에서 `standoff_list[0]` + `nav_standoff_margin_m`(기본 0.10) 떨어진 곳, 물체를 바라보는 yaw (interfaces.md 5.5) |
+| object | `object.x`, `object.y` | 물체에서 `standoff_list[0]` + `nav_standoff_margin_m`(기본 0.15) 떨어진 곳, 물체를 바라보는 yaw (interfaces.md 5.5) |
 
 - object 모드의 접근 방향은 출발 위치 → 물체 방향이다. 출발 위치는 시작 확인을 통과할 때의 `map → base_link`이고, 목표는 이때 한 번만 계산한다 (재정렬 때 다시 계산하지 않음)
 - 출발 위치를 못 읽으면 시작 확인에서 `tf_stale`로 기다리고, 시간이 지나면 `NAV_NOT_READY`

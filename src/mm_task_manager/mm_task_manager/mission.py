@@ -18,7 +18,9 @@ class Mission:
     goal_yaw: Optional[float] = None
     object_x: Optional[float] = None
     object_y: Optional[float] = None
-    nav_standoff_margin_m: float = 0.10   # 이동 거리 = standoff_list[0] + 이 값 (D 제안, 5.5)
+    # 이동 거리 = standoff_list[0] + 이 값 (5.5). 0.10 → 0.15: 도착 오차(최대 0.126 m)가 물체 쪽으로
+    # 생겨도 차체 앞면과 물체 사이 약 6 cm 남도록 (PR #1 D 의견)
+    nav_standoff_margin_m: float = 0.15
 
     nav_only: bool = True
 
