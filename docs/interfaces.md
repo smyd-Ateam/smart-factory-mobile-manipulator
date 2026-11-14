@@ -45,6 +45,7 @@
 > - 공용 launch 파일(`mm_description/launch/sim.launch.py`) 옵션: `software_gl:=true`(CPU 렌더링), `headless:=true`(Gazebo 화면 없이), `rviz:=false`(RViz 끄기), `rviz_gpu:=true`(RViz만 GPU로 그리기, Mac VM용), `render_engine`(기본 ogre)
 >   - Mac UTM VM: `ros2 launch mm_description sim.launch.py software_gl:=true headless:=true rviz_gpu:=true`
 >   - WSL2: `ros2 launch mm_description sim.launch.py software_gl:=true`
+> - Windows + WSL2: project_interfaces 빌드 시 (C, 2026-11-14): `PYTHONNOUSERSITE=1` 없이 `colcon build`하면 `TypeError: canonicalize_version() got an unexpected keyword argument 'strip_trailing_zero'` 발생. ultralytics/PyTorch를 `pip install --user`로 설치하면 최신 setuptools가 `~/.local`에 깔리는데, 이게 Ubuntu 22.04 기본(구버전) packaging과 충돌하기 때문. pip로 AI 패키지를 설치한 경우 전부 해당될 수 있음. 빌드 시 `PYTHONNOUSERSITE=1 colcon build`로 실행.
 
 ---
 
@@ -237,8 +238,8 @@ behavior_server (복구 동작)                        → (기본) /cmd_vel
 | 이름 | 타입 | 서버 | 클라이언트 | 비고 |
 |---|---|---|---|---|
 | `/navigate_to_pose` | `nav2_msgs/action/NavigateToPose` | A (Nav2) | 상태머신 | Nav2 표준 |
-| `/servoing/align` | `project_interfaces/action/Align` (예정) | D | 상태머신 | 베이스 미세 정렬 (팔 고정). 필드는 4.1 참고 |
-| `/grasp/execute` | `project_interfaces/action/Grasp` (예정) | B | 상태머신 | IK 검증 및 로봇팔 이동·파지. 필드는 4.2 참고 |
+| `/servoing/align` | `project_interfaces/action/Align` | D | 상태머신 | 베이스 미세 정렬 (팔 고정). 필드는 4.1 참고 |
+| `/grasp/execute` | `project_interfaces/action/Grasp` | B | 상태머신 | IK 검증 및 로봇팔 이동·파지. 필드는 4.2 참고 |
 | (이름 미정) | `project_interfaces` 액션 (예정) | B | 상태머신 | 팔을 관측 자세(`observe_pose`)로 이동. B가 MoveIt2로 경로 계획 · 실행 후 성공 여부 반환. 이름 · 필드는 B가 개발하면서 초안 공유 후 확정 (B, 2026-11-09) |
 | `/dofbot_arm_controller/follow_joint_trajectory` | `control_msgs/action/FollowJointTrajectory` | 팔 컨트롤러 | B (MoveIt) | joint1~5, `joint_trajectory_controller/JointTrajectoryController`. `ros2 action list -t`로 확인 (B, 2026-11-07, 새 모델 MoveIt 설정 기준) |
 | `/gripper_controller/gripper_cmd` | `control_msgs/action/GripperCommand` | 그리퍼 컨트롤러 | B | ros2_control 그리퍼 컨트롤러 이름을 `gripper_controller`로 설정 |
