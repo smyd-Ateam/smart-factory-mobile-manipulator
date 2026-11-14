@@ -2,7 +2,7 @@
 
 작업 상태머신: Nav2 이동 → 도착 확인 → 정렬(D) → 파지(B), 단계별 `/cmd_vel` 선택 (`docs/interfaces.md` 5.0)
 
-> 작성 중. 지금은 `nav_only`(이동 + 도착 확인)까지 동작한다. Align/Grasp는 `project_interfaces` 생성 후 추가.
+> 작성 중. `nav_only: true`면 이동 + 도착 확인까지, `false`면 정렬(`/servoing/align`) · 파지(`/grasp/execute`)까지 진행한다. 실제 정렬 · 파지 서버와는 아직 연동 시험 전 (mock으로만 확인, S16~S22).
 
 ## 빌드
 
@@ -45,8 +45,17 @@ mock 결과: `<out_dir>/<scenario>.jsonl` (상태머신 결과), `<out_dir>/<sce
 | `s13_object_diagonal` | 물체 (2.0, 1.0), 출발 (1.0, 0) | 목표 (1.7172, 0.7172, 0.7854), 도착 후 물체까지 0.40 m |
 | `s14_object_behind` | 물체 (0.0, -0.5), 출발 (1.0, 0) | 목표 (0.3578, -0.3211, -2.6779) |
 | `s15_object_close` | 물체 (1.2, 0), 출발 (1.0, 0) | 뒤로 물러나는 목표 (0.80, 0, 0) |
+| `s16_full_success` | 정렬 · 파지까지 정상 | SUCCEEDED, ALIGN 동안 `/servoing/cmd_vel`(0.03)이 `/cmd_vel`로 나감 |
+| `s17_ik_retry_success` | `IK_FAILED` 1회 후 성공 | 재정렬 1회 (standoff 0.25 → 0.22), SUCCEEDED |
+| `s18_ik_retry_exhausted` | `IK_FAILED` 3회 | 재정렬 2회 (0.25 → 0.22 → 0.28) 뒤 `IK_FAILED` |
+| `s19_align_not_found` | 정렬 중 물체 놓침 | `OBJECT_NOT_FOUND`, Grasp 안 보냄 |
+| `s20_align_timeout` | 정렬 서버 응답 없음 | `timeout_sec`(3.0) + 여유(1.0) 뒤 취소 → `ALIGN_TIMEOUT` / `timeout` |
+| `s21_no_target_pose` | 정렬 뒤 `target_pose` 안 옴 | 1.0 s 뒤 `OBJECT_NOT_FOUND` / `target_pose_stale`, Grasp 안 보냄 |
+| `s22_grasp_miss` | `GRASP_MISS` | 재정렬 없이 FAILED (재정렬은 `IK_FAILED`만) |
 
 S1~S11은 기본 미션(object 모드, 물체 (1.40, 0))으로 돌고, mock 차체가 (1.0, 0) 근처라 목표는 (1.0, 0, 0)이다.
+
+S16~S22는 `config/mock/full.yaml`(`nav_only: false`, 정렬 제한 3.0 + 1.0 s, 파지 제한 10 s)을 더하고 mock 3개를 같이 띄운다: `mock_align_server`(`/servoing/align`, 호출마다 결과 지정, 정렬 중 `/servoing/cmd_vel` 발행), `mock_grasp_server`(`/grasp/execute`, 호출마다 결과 지정, 받은 목표 기록), `mock_target_pose`(`/perception/target_pose`, `base_link` (0.25, 0, 0.02), 10 Hz, 끌 수 있음). 지금은 colcon test로만 돌린다 (`mock_nav_only.launch.py`에는 이 mock이 없음).
 
 mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF), `mock_nav_server`(`/navigate_to_pose`), `mock_cmd_publisher`(충돌용 `/cmd_vel`), `cmd_recorder`(`/cmd_vel`, `/task_manager/state` CSV). `task_manager`는 2 s 늦게 시작한다
 
@@ -72,10 +81,15 @@ mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF
 
 | 구분 | 이름 |
 |---|---|
-| 구독 | `/nav2/cmd_vel`, `/servoing/cmd_vel`, `/clock`, TF (`map→odom`, `map→base_link`) |
+| 구독 | `/nav2/cmd_vel`, `/servoing/cmd_vel`, `/perception/target_pose` (`geometry_msgs/msg/PoseStamped`, `base_link`), `/clock`, TF (`map→odom`, `map→base_link`) |
 | 발행 | `/cmd_vel` (10 Hz, 선택한 입력 또는 0), `/perception/target_class` (`transient_local`), `/task_manager/state` (`std_msgs/msg/String`, 현재 단계 이름, 바뀔 때만 발행, `transient_local`, interfaces.md v0.14 3장) |
 | 서비스 클라이언트 | `/lifecycle_manager_localization/is_active`, `/lifecycle_manager_navigation/is_active` |
-| 액션 클라이언트 | `/navigate_to_pose` |
+| 액션 클라이언트 | `/navigate_to_pose`, `/servoing/align` (`project_interfaces/action/Align`), `/grasp/execute` (`project_interfaces/action/Grasp`) |
+
+- 정렬 · 파지 (`nav_only: false`): 도착 확인 뒤 `Align`(`standoff_list`의 시도별 값, `timeout_sec` = `align_timeout_sec`) → 성공하면 `Grasp`. `IK_FAILED`면 `max_realign`까지 `standoff_m`을 바꿔 다시 정렬한다 (interfaces.md 5.2)
+- 정렬 결과를 `align_timeout_sec` + `align_margin_sec` 안에 못 받으면 취소하고 `ALIGN_TIMEOUT` (4.1). 파지는 `grasp_timeout_sec`(임시 60 s)
+- Grasp 목표의 `target_pose`: 정렬이 끝난 직후 바로 보내지 않고, 정렬 뒤 찍힌(stamp ≥ 정렬 완료 시각) 값 중 stamp 기준 `target_pose_max_age_sec`(1.0 s) 이내 값이 오면 그 값으로 보낸다. 1.0 s 안에 안 오면 `OBJECT_NOT_FOUND` / `target_pose_stale` (interfaces.md 3.3 미검출 규칙, `target_pose.py`). 기다리는 방식은 B 확인 전 구현 메모
+- 정렬 · 파지 서버가 목표를 거부하면 `UNKNOWN` / `rejected`
 
 - 취소 요청이 거부(REJECTED)되면 취소 완료로 보지 않고 `cancel_timeout_sec`까지 기다린다 (목표가 계속 돌 수 있으므로).
 - 시작 확인에서 자기 말고 `/cmd_vel` 발행자가 있으면 `ready_timeout_sec`까지 기다린 뒤 `NAV_NOT_READY` / `cmd_vel_conflict`로 끝낸다. 이전 실행 노드가 남아 0을 섞어 보내면 Nav2가 `Failed to make progress`로 실패하기 때문 (2026-11-09 확인). discovery를 기다리려고 시작 후 `ready_min_wait_sec`(1 s) 동안은 준비 판정을 하지 않는다.
@@ -97,6 +111,7 @@ mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF
 | `mm_task_manager/mission.py` | 미션 파라미터 읽기 · 검증 |
 | `mm_task_manager/result_log.py` | 결과 기록 (JSON 한 줄씩) |
 | `mm_task_manager/codes.py` | 실패 코드, 세부 원인 |
+| `mm_task_manager/target_pose.py` | Grasp에 넘길 `target_pose` 선택 (정렬 뒤 찍힌 1.0 s 이내 값, 없으면 미검출) |
 | `config/mission_test_room.yaml` | 미션 파라미터 (임시값, TODO 표시) |
 
 ## 테스트
@@ -110,7 +125,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q test --ignore=test/launch
 
 `~/.local`에 pytest를 따로 설치한 환경에서는 ROS의 `launch_testing` 플러그인과 충돌하므로 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`을 붙인다 (`visual_servoing` README 참고). `test/launch`는 launch_testing 플러그인이 있어야 하므로 제외한다.
 
-mock 시나리오 S1~S15 자동 시험 (launch_testing, 약 4분):
+mock 시나리오 S1~S22 자동 시험 (launch_testing, 약 6.5분):
 
 ```bash
 PYTHONNOUSERSITE=1 colcon test --packages-select mm_task_manager
@@ -118,8 +133,9 @@ PYTHONNOUSERSITE=1 colcon test-result --verbose
 ```
 
 - 시나리오마다 mock 노드와 `task_manager`를 띄우고, `task_manager`가 스스로 끝나기를 45 s까지만 기다린다 (멈춘 시나리오가 전체를 막지 않음)
-- 확인: 결과 기록 값, `/task_manager/state` 단계 순서, 0이 아닌 `/cmd_vel`은 NAVIGATE 동안에만, 끝난 뒤 0만 약 1 s 발행 후 종료, 시나리오별 조건, `mock_nav_server`가 받은 이동 목표(1 mm / 0.001 rad 이내), 이동 목표 모드와 물체까지 거리
-- 마지막 결과: `~/.ros/mm_task_manager/launch_test/<시나리오>/` (`result.jsonl`, `record.csv`, `goals.csv`)
+- 확인: 결과 기록 값, `/task_manager/state` 단계 순서, 0이 아닌 `/cmd_vel`은 NAVIGATE · ALIGN 동안에만, 끝난 뒤 0만 약 1 s 발행 후 종료, 시나리오별 조건, `mock_nav_server`가 받은 이동 목표(1 mm / 0.001 rad 이내), 이동 목표 모드와 물체까지 거리
+- S16~S22 추가 확인: mock이 받은 Align 목표(`standoff_m` 순서, `timeout_sec`) · Grasp 목표(호출 수, `base_link`, pose 나이 1.0 s 이내), 재정렬 횟수 · 실패 단계, ALIGN 동안 `/servoing/cmd_vel` 전달. mock이 3개 더 떠서 discovery가 늦으므로 `task_manager`는 4 s 늦게 시작한다
+- 마지막 결과: `~/.ros/mm_task_manager/launch_test/<시나리오>/` (`result.jsonl`, `record.csv`, `goals.csv`, S16~S22는 `align_goals.csv`, `grasp_goals.csv`)
 - JUnit 결과(`build/mm_task_manager/pytest.xml`)에는 launch 시험 파일 전체가 테스트 1개로 나온다. 실패하면 `log/latest_test/mm_task_manager/stdout_stderr.log`에 시나리오별 실패가 나온다
 - `/task_manager/state`의 IDLE은 시작 직후 약 0.1 s만 유지되고 depth 1 `transient_local`이라, 늦게 연결된 구독자는 못 받을 수 있다
 
@@ -132,6 +148,8 @@ PYTHONNOUSERSITE=1 colcon test-result --verbose
 | `NAV_NOT_READY` | 제한 시간 안에 Nav2 활성화 · `map→odom` · `/navigate_to_pose` 서버가 준비되지 않음. 목표를 보내지 않음 |
 
 `NAV_FAILED`의 세부 원인은 결과 기록의 `detail`에 남긴다: `arrival_check`, `tf_stale`, `timeout`, `aborted`, `rejected`, `canceled`
+
+`OBJECT_NOT_FOUND`는 정렬 서버(D)가 돌려준 경우 detail이 비어 있고, 상태머신이 정렬 뒤 `target_pose`를 못 받은 경우 `target_pose_stale`이다
 
 ## 도착 확인과 가짜 성공
 
