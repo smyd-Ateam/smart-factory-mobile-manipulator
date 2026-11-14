@@ -352,7 +352,7 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 
 - `OBJECT_NOT_FOUND` 판정 기준 (C 제안): score 0.5 이상인 목표 클래스 검출이 연속 N프레임(예: 10프레임) 동안 없으면 발생. 수치는 첫 모델 학습 후 조정
 - B는 `IK_FAILED`, `GRASP_MISS`, `GRASP_SLIP`을 사용한다 (`GRASP_FAILED`는 따로 만들지 않음, B 확인)
-- 세부 원인(detail): A는 같은 코드 안에서도 원인을 나눠 결과 기록(5.5)에 남긴다. `NAV_NOT_READY`: `lifecycle_inactive`, `cmd_vel_conflict` 등 / `NAV_FAILED`: `rejected`, `aborted`, `timeout`, `arrival_check`, `tf_stale` / `UNKNOWN`: `clock_stopped`
+- 세부 원인(detail): A는 같은 코드 안에서도 원인을 나눠 결과 기록(5.5)에 남긴다. `NAV_NOT_READY`: `lifecycle_inactive`, `cmd_vel_conflict` 등 / `NAV_FAILED`: `rejected`, `aborted`, `timeout`, `arrival_check`, `tf_stale` / `UNKNOWN`: `clock_stopped` / `OBJECT_NOT_FOUND`: `target_pose_stale` (정렬 뒤 1.0 s 안에 쓸 `target_pose`가 없음, 3.3 미검출 규칙)
 - 상태머신이 `Align` 결과를 `timeout_sec` + 여유 안에 못 받으면 취소하고 `ALIGN_TIMEOUT`으로 기록한다 (D 확인, 4.1). `Grasp` 제한 시간은 임시 60 s (B 확인), 넘었을 때 쓸 코드는 미정
 
 ### 5.4 파지 대상 물체 (2026-11-03 회의)
@@ -442,6 +442,7 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - [x] 상태머신이 Align 응답을 못 받았을 때 → `timeout_sec` + 여유 뒤 취소, `ALIGN_TIMEOUT` (D 확인, 4.1)
 - [ ] Grasp 최대 소요 시간 (B) — 상태머신 제한 시간 임시 60 s (B: 60 s보다 적게 걸릴 것 같음). 그리퍼 제어 구현 후 실제 시간 보고 조정
 - [ ] Grasp에 넘길 `target_pose`의 최대 나이 (B) — 정렬 완료 후 받은 값 중 stamp 기준 1.0 s 이내. C 발행 주기(최소 5 Hz)와 맞음. B 확인 필요
+  - Grasp 목표는 정렬 완료 직후가 아니라, 정렬 뒤 찍힌 target_pose가 올 때까지 최대 1.0s 기다렸다 보냄 (구현 메모 — B 확인 필요, 확정 스펙 아님)
 - [x] Nav2 도착 허용 오차 → 그대로 둠. 대신 Nav2 목표를 물체에서 `standoff_m` + 0.15 m 이상 멀리 둠 (D, 5.5)
 - [x] 목표 근처 맴돌기 → Nav2 설정은 그대로 둠. 다가오는 방향과 목표 yaw가 크게 다르면(약 180°) 도착 후 제자리 회전 중 맴돌 수 있음 (DWB와 goal checker가 서로 다른 시각의 map→odom을 쓰고, 1 Hz 재계획마다 둘 다 초기화됨. Humble 1.1.20 소스로 확인, 2026-11-13). object 모드는 목표 yaw가 물체를 바라보는 방향(= 다가오는 방향)이라 큰 회전이 거의 없고, 남는 yaw 오차는 D 정렬(시작 범위 ±0.35 rad)이 받는다. goal 모드에서 목표 yaw를 정할 때는 다가오는 방향에 가깝게 정한다 (A)
 - [ ] 팀 코드 라이선스 (전원) — MIT 또는 Apache-2.0 중 선택. D는 둘 다 괜찮음
