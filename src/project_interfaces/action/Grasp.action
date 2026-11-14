@@ -1,0 +1,10 @@
+# Goal
+string target_class                      # 잡을 물체 종류 (YOLO 클래스 이름, Align과 같은 이름)
+geometry_msgs/PoseStamped target_pose    # 물체 위치 (C의 /perception/target_pose, base_link 기준)
+---
+# Result
+bool success
+string error_code                        # 실패 시 5.3 실패 코드 이름 (IK_FAILED, GRASP_MISS, GRASP_SLIP 등)
+---
+# Feedback
+string phase                             # 현재 단계 (IK_CHECK, APPROACH, GRIP 등)
