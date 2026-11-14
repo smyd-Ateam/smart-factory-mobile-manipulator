@@ -1,9 +1,11 @@
-"""mock 시나리오 S1~S15 자동 시험 (launch_testing).
+"""mock 시나리오 S1~S22 자동 시험 (launch_testing).
 
 colcon test로 실행한다 (README 참고). 시나리오마다 mock 노드와 task_manager를 띄우고,
 task_manager가 스스로 끝나기를 SCENARIO_TIMEOUT_SEC까지만 기다린다 (멈춘 시나리오가 전체를 막지 않게).
 끝난 뒤 결과 기록(JSONL), /cmd_vel · /task_manager/state 기록(CSV),
 mock_nav_server가 받은 이동 목표(CSV)를 기대값과 비교한다.
+S16~S22(정렬 · 파지까지, nav_only false)는 mock Align/Grasp 서버와 mock target_pose를 같이 띄우고
+받은 Align/Grasp 목표(CSV)도 비교한다.
 """
 
 import csv
@@ -26,6 +28,7 @@ PKG = 'mm_task_manager'
 OUT_ROOT = '~/.ros/mm_task_manager/launch_test'
 SCENARIO_TIMEOUT_SEC = 45.0
 START_DELAY_SEC = 2.0          # recorder가 IDLE부터 받도록 task_manager를 늦게 시작
+FULL_START_DELAY_SEC = 4.0     # S16~S22는 mock이 3개 더 떠서 discovery가 늦음 (2.0 s면 WAIT_READY까지 놓친 적 있음)
 FINAL_ZERO_SEC = 1.0           # mission_test_room.yaml final_zero_sec
 
 OK = ['IDLE', 'WAIT_READY', 'NAVIGATE', 'VERIFY_ARRIVAL', 'SUCCEEDED']
@@ -33,6 +36,13 @@ NAV_FAIL = ['IDLE', 'WAIT_READY', 'NAVIGATE', 'FAILED']
 ARRIVAL_FAIL = ['IDLE', 'WAIT_READY', 'NAVIGATE', 'VERIFY_ARRIVAL', 'FAILED']
 TIMEOUT_FAIL = ['IDLE', 'WAIT_READY', 'NAVIGATE', 'CANCELING', 'FAILED']
 NOT_READY = ['IDLE', 'WAIT_READY', 'FAILED']
+_TO_ALIGN = ['IDLE', 'WAIT_READY', 'NAVIGATE', 'VERIFY_ARRIVAL', 'ALIGN']
+FULL_OK = _TO_ALIGN + ['GRASP', 'SUCCEEDED']
+REALIGN_OK = _TO_ALIGN + ['GRASP', 'ALIGN', 'GRASP', 'SUCCEEDED']
+REALIGN_FAIL = _TO_ALIGN + ['GRASP', 'ALIGN', 'GRASP', 'ALIGN', 'GRASP', 'FAILED']
+ALIGN_FAIL = _TO_ALIGN + ['FAILED']
+ALIGN_CANCEL = _TO_ALIGN + ['CANCELING', 'FAILED']
+GRASP_FAIL = _TO_ALIGN + ['GRASP', 'FAILED']
 
 # 시나리오: (최종 상태, error_code, detail, aborted, cancel_no_response, 단계 순서)
 EXPECTED = {
@@ -53,7 +63,29 @@ EXPECTED = {
     's13_object_diagonal': ('SUCCEEDED', '', '', False, False, OK),
     's14_object_behind': ('SUCCEEDED', '', '', False, False, OK),
     's15_object_close': ('SUCCEEDED', '', '', False, False, OK),
+    # 정렬 · 파지까지 (nav_only false)
+    's16_full_success': ('SUCCEEDED', '', '', False, False, FULL_OK),
+    's17_ik_retry_success': ('SUCCEEDED', '', '', False, False, REALIGN_OK),
+    's18_ik_retry_exhausted': ('FAILED', 'IK_FAILED', '', False, False, REALIGN_FAIL),
+    's19_align_not_found': ('FAILED', 'OBJECT_NOT_FOUND', '', False, False, ALIGN_FAIL),
+    's20_align_timeout': ('FAILED', 'ALIGN_TIMEOUT', 'timeout', False, False, ALIGN_CANCEL),
+    's21_no_target_pose': ('FAILED', 'OBJECT_NOT_FOUND', 'target_pose_stale', False, False,
+                           GRASP_FAIL),
+    's22_grasp_miss': ('FAILED', 'GRASP_MISS', '', False, False, GRASP_FAIL),
 }
+
+# 정렬 · 파지 시나리오: (Align 호출마다 standoff_m, Grasp 호출 수, 실패 단계, 재정렬 횟수)
+# standoff_list [0.25, 0.22, 0.28] (mission_test_room.yaml)
+FULL = {
+    's16_full_success': ([0.25], 1, '', 0),
+    's17_ik_retry_success': ([0.25, 0.22], 2, '', 1),
+    's18_ik_retry_exhausted': ([0.25, 0.22, 0.28], 3, 'GRASP', 2),
+    's19_align_not_found': ([0.25], 0, 'ALIGN', 0),
+    's20_align_timeout': ([0.25], 0, 'ALIGN', 0),
+    's21_no_target_pose': ([0.25], 0, 'GRASP', 0),
+    's22_grasp_miss': ([0.25], 1, 'GRASP', 0),
+}
+SERVO_VX = 0.03   # mock_align_server가 정렬 중 /servoing/cmd_vel로 보내는 값 (full.yaml)
 
 # 기본 미션 파일 (config/ 기준). 없으면 mission_test_room.yaml (object 모드, 물체 (1.40, 0))
 MISSION_BASE = {'s12_goal_mode': os.path.join('mock', 'mission_goal_mode.yaml')}
@@ -92,8 +124,10 @@ def generate_test_description(scenario):
     os.makedirs(out_dir)
     mission = MISSION_BASE.get(scenario, 'mission_test_room.yaml')
     files = [os.path.join(share, 'config', mission),
-             os.path.join(share, 'config', 'mock', 'common.yaml'),
-             os.path.join(share, 'config', 'mock', scenario + '.yaml')]
+             os.path.join(share, 'config', 'mock', 'common.yaml')]
+    if scenario in FULL:
+        files.append(os.path.join(share, 'config', 'mock', 'full.yaml'))
+    files.append(os.path.join(share, 'config', 'mock', scenario + '.yaml'))
 
     def node(executable, extra=None, use_sim_time=True):
         params = files + [{'use_sim_time': use_sim_time}] + ([extra] if extra else [])
@@ -102,14 +136,20 @@ def generate_test_description(scenario):
 
     task_manager = node('task_manager',
                         {'result_log_path': os.path.join(out_dir, 'result.jsonl')})
-    return LaunchDescription([
+    full_mocks = [
+        node('mock_align_server', {'goal_log_path': os.path.join(out_dir, 'align_goals.csv')}),
+        node('mock_grasp_server', {'goal_log_path': os.path.join(out_dir, 'grasp_goals.csv')}),
+        node('mock_target_pose'),
+    ] if scenario in FULL else []
+    return LaunchDescription(full_mocks + [
         node('mock_clock', use_sim_time=False),
         node('mock_lifecycle'),
         node('mock_tf'),
         node('mock_nav_server', {'goal_log_path': os.path.join(out_dir, 'goals.csv')}),
         node('mock_cmd_publisher'),
         node('cmd_recorder', {'csv_path': os.path.join(out_dir, 'record.csv')}),
-        TimerAction(period=START_DELAY_SEC, actions=[task_manager]),
+        TimerAction(period=FULL_START_DELAY_SEC if scenario in FULL else START_DELAY_SEC,
+                    actions=[task_manager]),
         launch_testing.actions.ReadyToTest(),
     ]), {'task_manager': task_manager, 'out_dir': out_dir, 'scenario': scenario}
 
@@ -157,11 +197,11 @@ class TestResult(unittest.TestCase):
         self.assertIn(got, (expected, expected[1:]))
 
     def test_cmd_vel_only_while_navigate(self, out_dir):
-        # 5.0: 0이 아닌 /cmd_vel은 NAVIGATE 동안에만 (경계에서 한 주기 여유)
+        # 5.0: 0이 아닌 /cmd_vel은 NAVIGATE(Nav2)와 ALIGN(정렬) 동안에만 (경계에서 한 주기 여유)
         _, states, cmds = _load(out_dir)
         windows = []
         for (t, _, s), nxt in zip(states, states[1:] + [(float('inf'), 0, '')]):
-            if s == 'NAVIGATE':
+            if s in ('NAVIGATE', 'ALIGN'):
                 windows.append((t, nxt[0] + 0.15))
         bad = [(t, vx, wz) for t, _, vx, wz in cmds
                if (vx, wz) != (0.0, 0.0) and not any(a <= t <= b for a, b in windows)]
@@ -204,6 +244,45 @@ class TestResult(unittest.TestCase):
         self.assertAlmostEqual(float(g['y']), expected[1], delta=1e-3)
         dyaw = (float(g['yaw']) - expected[2] + math.pi) % (2 * math.pi) - math.pi
         self.assertAlmostEqual(dyaw, 0.0, delta=1e-3)
+
+    def test_align_grasp(self, out_dir, scenario):
+        # S16~S22: mock이 받은 Align/Grasp 목표, 재정렬 기록, 단계별 /cmd_vel 입력
+        if scenario not in FULL:
+            return
+        standoffs, grasp_calls, stage, realign = FULL[scenario]
+        record, states, cmds = _load(out_dir)
+        with open(os.path.join(out_dir, 'align_goals.csv')) as f:
+            aligns = list(csv.DictReader(f))
+        self.assertEqual([a['target_class'] for a in aligns], ['block'] * len(standoffs))
+        for a, sd in zip(aligns, standoffs):
+            self.assertAlmostEqual(float(a['standoff_m']), sd, delta=1e-9)
+            self.assertAlmostEqual(float(a['timeout_sec']), 3.0, delta=1e-9)   # full.yaml
+        self.assertEqual(len(aligns), len(standoffs))
+        self.assertEqual(record['standoffs_used'], standoffs)
+        self.assertEqual(record['realign_count'], realign)
+        self.assertEqual(record['failed_stage'], stage)
+        self.assertFalse(record['nav_only'])
+
+        path = os.path.join(out_dir, 'grasp_goals.csv')
+        grasps = list(csv.DictReader(open(path))) if os.path.exists(path) else []
+        self.assertEqual(len(grasps), grasp_calls)
+        for g in grasps:
+            # mock_target_pose 값이 그대로 (base_link, 정렬 뒤 찍힌 1 s 이내 값)
+            self.assertEqual((g['target_class'], g['frame_id']), ('block', 'base_link'))
+            self.assertAlmostEqual(float(g['x']), 0.25, delta=1e-6)
+            # 노드마다 /clock을 받는 시점이 한 스텝(0.01 s)쯤 달라 약간 음수가 될 수 있음
+            self.assertGreaterEqual(float(g['age_sec']), -0.05)
+            self.assertLessEqual(float(g['age_sec']), 1.0)
+
+        # 정렬 중에는 /servoing/cmd_vel(SERVO_VX)이 /cmd_vel로 나간다
+        align_windows = []
+        for (t, _, s), nxt in zip(states, states[1:] + [(float('inf'), 0, '')]):
+            if s == 'ALIGN':
+                align_windows.append((t, nxt[0]))
+        servo = [vx for t, _, vx, _ in cmds
+                 if any(a + 0.3 <= t <= b - 0.15 for a, b in align_windows)]
+        if scenario != 's20_align_timeout':
+            self.assertTrue(servo and all(abs(v - SERVO_VX) < 1e-6 for v in servo), servo[:5])
 
     def test_nav_goal_mode(self, out_dir, scenario):
         record, _, _ = _load(out_dir)

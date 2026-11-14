@@ -2,6 +2,8 @@
 
 로직은 machine.TaskMachine에 있고, 이 노드는 ROS 연결만 한다:
 액션 · 서비스 호출, TF 조회, 타이머, /cmd_vel 선택 발행 (docs/interfaces.md 5.0).
+nav_only false면 도착 확인 뒤 /servoing/align(D) → /grasp/execute(B)까지 진행한다 (4장).
+Grasp 목표의 target_pose는 /perception/target_pose(C) 중 정렬 뒤 찍힌 1 s 이내 값 (target_pose.py).
 """
 
 import datetime
@@ -10,8 +12,9 @@ import time
 
 from action_msgs.msg import GoalStatus
 from action_msgs.srv import CancelGoal as CancelGoalSrv
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import PoseStamped, Twist
 from nav2_msgs.action import NavigateToPose
+from project_interfaces.action import Align, Grasp
 from rclpy.action import ActionClient
 from rclpy.clock import Clock, ClockType
 from rclpy.node import Node
@@ -22,6 +25,7 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 
+from mm_task_manager import codes
 from mm_task_manager import machine as sm
 from mm_task_manager.cmd_select import NAV, SERVO, CmdSelector, source_for
 from mm_task_manager.geometry import yaw_from_quaternion
@@ -30,6 +34,7 @@ from mm_task_manager.result_log import append_jsonl
 from mm_task_manager.final_stop import FinalStop
 from mm_task_manager.run import NodeExit, run
 from mm_task_manager.states import TERMINAL_STATES, State, StateReporter
+from mm_task_manager.target_pose import SEND, STALE, GraspPoseRequest
 
 LIFECYCLE_SERVICES = ('/lifecycle_manager_localization/is_active',
                       '/lifecycle_manager_navigation/is_active')
@@ -75,9 +80,6 @@ class TaskManagerNode(Node):
         mission, warnings = mission_from_dict(_declare_mission_params(self))
         for w in warnings:
             self.get_logger().warn(w)
-        if not mission.nav_only:
-            # TODO(project_interfaces): Align/Grasp 액션 클라이언트 (align_grasp_clients.py)
-            raise RuntimeError('nav_only:=false needs project_interfaces (not created yet)')
         self.mission = mission
         self.autostart = self.declare_parameter('autostart', True).value
 
@@ -108,10 +110,18 @@ class TaskManagerNode(Node):
         self.lifecycle_pending = set()
         self.last_lifecycle_poll = -math.inf
 
-        # Nav2 액션
+        # 액션 (interfaces.md 4장). goal_handles는 세 액션이 token으로 같이 씀
         self.nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
+        self.align_client = ActionClient(self, Align, '/servoing/align')
+        self.grasp_client = ActionClient(self, Grasp, '/grasp/execute')
         self.goal_handles = {}
         self.cancel_requested = set()
+
+        # Grasp에 넘길 물체 위치 (C, base_link). 정렬 뒤 찍힌 1 s 이내 값이 올 때까지 Grasp 전송 대기
+        self.latest_target_pose = None
+        self.grasp_request = None
+        self.create_subscription(PoseStamped, '/perception/target_pose',
+                                 self._on_target_pose, 10)
 
         # /clock 감시 (wall time: sim time 타이머는 /clock이 멈추면 같이 멈춤)
         self.last_clock_wall = None
@@ -178,6 +188,8 @@ class TaskManagerNode(Node):
         elif state == State.VERIFY_ARRIVAL:
             self._dispatch(sm.PoseSample(now=now, pose=self._map_base_pose(),
                                          map_odom_stamp=self._map_odom_stamp()))
+        elif state == State.GRASP:
+            self._check_grasp_request(now)
         self._dispatch(sm.Tick(now=now))
 
     def _publish_cmd(self):
@@ -250,12 +262,17 @@ class TaskManagerNode(Node):
             self.class_pub.publish(String(data=cmd.target_class))
         elif isinstance(cmd, sm.SendNavGoal):
             self._send_nav_goal(cmd)
+        elif isinstance(cmd, sm.SendAlignGoal):
+            self._send_align_goal(cmd)
+        elif isinstance(cmd, sm.SendGraspGoal):
+            # 바로 보내지 않고, 정렬 뒤 찍힌 target_pose가 오면 보냄 (_check_grasp_request)
+            self.grasp_request = GraspPoseRequest(cmd.token, self._now(), cmd.max_pose_age_sec)
+            self._check_grasp_request(self._now())
         elif isinstance(cmd, sm.CancelGoal):
             self._cancel(cmd.token)
         elif isinstance(cmd, sm.WriteRecord):
             self._write_record(cmd.record)
         else:
-            # SendAlignGoal, SendGraspGoal: nav_only에서는 나오지 않음
             self.get_logger().error(f'unsupported command {cmd}')
 
     def _send_nav_goal(self, cmd):
@@ -268,17 +285,60 @@ class TaskManagerNode(Node):
         goal.pose.pose.orientation.w = math.cos(cmd.yaw / 2.0)
         self.get_logger().info(
             f'nav goal #{cmd.token}: ({cmd.x:.3f}, {cmd.y:.3f}, {cmd.yaw:.3f})')
-        future = self.nav_client.send_goal_async(goal)
-        future.add_done_callback(lambda f, t=cmd.token: self._on_nav_accepted(t, f))
+        self._send_goal(self.nav_client, goal, cmd.token, self._on_nav_result,
+                        lambda t: sm.NavResult(now=self._now(), token=t, status=sm.NAV_REJECTED))
 
-    def _on_nav_accepted(self, token, future):
+    def _send_align_goal(self, cmd):
+        goal = Align.Goal(target_class=cmd.target_class, standoff_m=cmd.standoff_m,
+                          timeout_sec=cmd.timeout_sec)
+        self.get_logger().info(f'align goal #{cmd.token}: {cmd.target_class} '
+                               f'standoff {cmd.standoff_m:.3f} timeout {cmd.timeout_sec:.1f}')
+        self._send_goal(self.align_client, goal, cmd.token,
+                        lambda t, f: self._on_task_result(sm.AlignResult, 'align', t, f),
+                        lambda t: _rejected(sm.AlignResult, self._now(), t))
+
+    def _on_target_pose(self, msg):
+        self.latest_target_pose = msg
+        if self.machine.state == State.GRASP:
+            self._check_grasp_request(self._now())
+
+    def _check_grasp_request(self, now):
+        req = self.grasp_request
+        if req is None:
+            return
+        pose = self.latest_target_pose
+        decision = req.check(_stamp_sec(pose.header.stamp) if pose is not None else None, now)
+        if decision == SEND:
+            self.grasp_request = None
+            self._send_grasp_goal(req.token, pose)
+        elif decision == STALE:
+            self.grasp_request = None
+            self.get_logger().warn(f'no target_pose within {req.max_age_sec:.1f} s after align')
+            self._dispatch(sm.GraspResult(now=now, token=req.token, success=False,
+                                          error_code=codes.OBJECT_NOT_FOUND,
+                                          detail=codes.TARGET_POSE_STALE))
+
+    def _send_grasp_goal(self, token, pose):
+        goal = Grasp.Goal(target_class=self.mission.target_class, target_pose=pose)
+        p = pose.pose.position
+        self.get_logger().info(f'grasp goal #{token}: {goal.target_class} '
+                               f'({p.x:.3f}, {p.y:.3f}, {p.z:.3f}) {pose.header.frame_id}')
+        self._send_goal(self.grasp_client, goal, token,
+                        lambda t, f: self._on_task_result(sm.GraspResult, 'grasp', t, f),
+                        lambda t: _rejected(sm.GraspResult, self._now(), t))
+
+    def _send_goal(self, client, goal, token, on_result, on_rejected):
+        future = client.send_goal_async(goal)
+        future.add_done_callback(
+            lambda f: self._on_accepted(token, f, on_result, on_rejected))
+
+    def _on_accepted(self, token, future, on_result, on_rejected):
         handle = future.result()
         if handle is None or not handle.accepted:
-            self._dispatch(sm.NavResult(now=self._now(), token=token, status=sm.NAV_REJECTED))
+            self._dispatch(on_rejected(token))
             return
         self.goal_handles[token] = handle
-        handle.get_result_async().add_done_callback(
-            lambda f, t=token: self._on_nav_result(t, f))
+        handle.get_result_async().add_done_callback(lambda f, t=token: on_result(t, f))
         if token in self.cancel_requested:     # 수락 전에 취소 요청이 있었음
             self._cancel(token)
 
@@ -288,8 +348,21 @@ class TaskManagerNode(Node):
         self._dispatch(sm.NavResult(now=self._now(), token=token,
                                     status=_NAV_STATUS.get(status, sm.NAV_ABORTED)))
 
+    def _on_task_result(self, result_type, name, token, future):
+        # Align/Grasp: 성공 여부와 코드는 Result 필드로 판단. 취소된 경우 detail canceled
+        res = future.result()
+        detail = codes.CANCELED if res.status == GoalStatus.STATUS_CANCELED else ''
+        self.get_logger().info(f'{name} goal #{token} status {res.status} '
+                               f'success {res.result.success} code {res.result.error_code!r}')
+        self._dispatch(result_type(now=self._now(), token=token, success=bool(res.result.success),
+                                   error_code=res.result.error_code, detail=detail))
+
     def _cancel(self, token):
         self.cancel_requested.add(token)
+        if self.grasp_request is not None and self.grasp_request.token == token:
+            self.grasp_request = None           # 아직 보내지 않은 Grasp: 보낼 것이 없음
+            self._dispatch(sm.CancelDone(now=self._now(), token=token))
+            return
         handle = self.goal_handles.get(token)
         if handle is None:
             return                              # 수락 응답이 오면 그때 취소
@@ -315,6 +388,11 @@ class TaskManagerNode(Node):
         self.get_logger().info(
             f'finished {record["final_state"]} error_code={record["error_code"]!r} '
             f'detail={record["detail"]!r} stage={record["failed_stage"]!r}')
+
+
+def _rejected(result_type, now, token):
+    return result_type(now=now, token=token, success=False, error_code=codes.UNKNOWN,
+                       detail=codes.REJECTED)
 
 
 def main(args=None):

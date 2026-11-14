@@ -1,0 +1,4 @@
+# S16 정상: 이동 → 정렬 → 파지 성공 → SUCCEEDED
+mock_align_server:
+  ros__parameters:
+    results: ['success']

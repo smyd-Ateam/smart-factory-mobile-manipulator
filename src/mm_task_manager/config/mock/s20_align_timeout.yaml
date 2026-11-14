@@ -1,0 +1,4 @@
+# S20 정렬 서버가 결과를 안 줌 → 3.0 + 1.0 s 뒤 취소 → ALIGN_TIMEOUT / timeout (interfaces.md 4.1)
+mock_align_server:
+  ros__parameters:
+    results: ['hang']

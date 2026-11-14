@@ -1,0 +1,24 @@
+# S16~S22 공통: 정렬 · 파지까지 (nav_only false). 시험 시간을 줄이려고 제한 시간을 짧게 둔다
+task_manager:
+  ros__parameters:
+    nav_only: false
+    align_timeout_sec: 3.0      # Align Goal의 timeout_sec
+    align_margin_sec: 1.0       # 상태머신은 3.0 + 1.0 s까지 기다린 뒤 취소
+    grasp_timeout_sec: 10.0
+    target_pose_max_age_sec: 1.0
+mock_align_server:
+  ros__parameters:
+    results: ['success']        # 호출마다 결과 (마지막 값을 계속 사용). success, hang, 또는 실패 코드
+    duration_sec: 1.0
+    servo_vx: 0.03              # 정렬 중 /servoing/cmd_vel linear.x
+mock_grasp_server:
+  ros__parameters:
+    results: ['success']
+    duration_sec: 1.0
+mock_target_pose:
+  ros__parameters:
+    enabled: true
+    rate_hz: 10.0
+    x: 0.25                     # base_link 기준 물체 위치 (standoff 0.25 m 앞)
+    y: 0.0
+    z: 0.02

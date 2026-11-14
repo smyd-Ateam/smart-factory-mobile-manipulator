@@ -1,0 +1,4 @@
+# S21 정렬 뒤 target_pose가 안 옴 → 1.0 s 뒤 OBJECT_NOT_FOUND / target_pose_stale, Grasp 목표 안 보냄
+mock_target_pose:
+  ros__parameters:
+    enabled: false

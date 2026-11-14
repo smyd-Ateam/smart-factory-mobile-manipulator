@@ -1,0 +1,4 @@
+# S19 정렬 중 물체를 놓침 → OBJECT_NOT_FOUND, 파지 안 함
+mock_align_server:
+  ros__parameters:
+    results: ['OBJECT_NOT_FOUND']

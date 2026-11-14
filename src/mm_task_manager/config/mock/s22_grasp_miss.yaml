@@ -1,0 +1,4 @@
+# S22 GRASP_MISS → 재정렬 없이 FAILED (재정렬은 IK_FAILED만)
+mock_grasp_server:
+  ros__parameters:
+    results: ['GRASP_MISS']

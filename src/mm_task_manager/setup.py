@@ -32,6 +32,9 @@ setup(
             'mock_nav_server = mm_task_manager.mocks.mock_nav_server:main',
             'cmd_recorder = mm_task_manager.mocks.cmd_recorder:main',
             'mock_cmd_publisher = mm_task_manager.mocks.mock_cmd_publisher:main',
+            'mock_align_server = mm_task_manager.mocks.mock_align_server:main',
+            'mock_grasp_server = mm_task_manager.mocks.mock_grasp_server:main',
+            'mock_target_pose = mm_task_manager.mocks.mock_target_pose:main',
         ],
     },
 )

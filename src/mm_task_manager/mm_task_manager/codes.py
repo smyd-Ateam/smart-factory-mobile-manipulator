@@ -25,6 +25,7 @@ ABORTED = 'aborted'                  # Nav2가 ABORTED 반환
 REJECTED = 'rejected'                # 목표 거부
 CANCELED = 'canceled'                # 상태머신이 요청하지 않은 취소
 CLOCK_STOPPED = 'clock_stopped'      # /clock 정지 (wall time 감시)
+TARGET_POSE_STALE = 'target_pose_stale'   # 정렬 뒤 쓸 /perception/target_pose가 1 s 안에 없음 (OBJECT_NOT_FOUND, 3.3)
 
 # NAV_NOT_READY의 detail: 마지막으로 확인된 준비 안 된 이유
 LIFECYCLE_INACTIVE = 'lifecycle_inactive'
