@@ -1,0 +1,94 @@
+<?xml version="1.0"?>
+<!--
+  부품 4종 + boundingbox 카메라 확인용 월드 (Gazebo Fortress)
+  - 카메라: 640x480, 가로 시야각 60°, 10 Hz, 22° 아래로 숙임 (observe_pose_01과 비슷한 시점)
+  - 카메라 높이 0.30 m, 부품은 카메라 앞 0.7~0.9 m 바닥에 배치
+-->
+<sdf version="1.8">
+  <world name="parts_test_ogre2">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="ignition-gazebo-physics-system" name="ignition::gazebo::systems::Physics"/>
+    <plugin filename="ignition-gazebo-user-commands-system" name="ignition::gazebo::systems::UserCommands"/>
+    <plugin filename="ignition-gazebo-scene-broadcaster-system" name="ignition::gazebo::systems::SceneBroadcaster"/>
+    <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors">
+      <!-- boundingbox 카메라는 ogre2 전용 -->
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+          <material>
+            <ambient>0.6 0.6 0.55 1</ambient>
+            <diffuse>0.6 0.6 0.55 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 카메라 리그: +x 방향을 보고, pitch 0.39 rad(약 22°) 아래로 숙임 -->
+    <model name="camera_rig">
+      <static>true</static>
+      <pose>0 0 0.30 0 0.39 0</pose>
+      <link name="link">
+        <sensor name="bbox_camera" type="boundingbox_camera">
+          <topic>boxes</topic>
+          <always_on>true</always_on>
+          <update_rate>10</update_rate>
+          <visualize>true</visualize>
+          <camera>
+            <box_type>2d</box_type>
+            <horizontal_fov>1.0472</horizontal_fov>
+            <image>
+              <width>640</width>
+              <height>480</height>
+            </image>
+            <clip>
+              <near>0.05</near>
+              <far>10</far>
+            </clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+    <!-- 부품 4종 (원점이 바닥 중심이라 z=0에 두면 바닥 위에 놓임) -->
+    <include>
+      <uri>model://block</uri>
+      <name>block_0</name>
+      <pose>0.75 0.12 0 0 0 0.3</pose>
+    </include>
+    <include>
+      <uri>model://pin</uri>
+      <name>pin_0</name>
+      <pose>0.85 0.04 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://hex_nut</uri>
+      <name>hex_nut_0</name>
+      <pose>0.75 -0.04 0 0 0 0.2</pose>
+    </include>
+    <include>
+      <uri>model://bolt</uri>
+      <name>bolt_0</name>
+      <pose>0.85 -0.13 0 0 0 0</pose>
+    </include>
+  </world>
+</sdf>
