@@ -195,7 +195,7 @@ map
 | `/joint_states` | `sensor_msgs/msg/JointState` | 시뮬 / ros2_control | B, D | — | |
 | `/servoing/cmd_vel` | `geometry_msgs/msg/Twist` | D | 상태머신 | — | 베이스 미세 정렬용 차체 속도 명령 (팔은 고정) |
 | `/perception/target_class` | `std_msgs/msg/String` | 상태머신(A) | C | — | 이번에 잡을 물체 클래스 이름. QoS `transient_local` (나중에 켜진 노드도 마지막 값 수신) |
-| `/task_manager/state` | `std_msgs/msg/String` | 상태머신(A) | 누구나 (모니터링 · 시험) | — | 현재 단계 이름 (`IDLE`, `WAIT_READY`, `NAVIGATE`, `VERIFY_ARRIVAL`, `ALIGN`, `GRASP`, `CANCELING`, `SUCCEEDED`, `FAILED`). 단계가 바뀔 때 발행, QoS `transient_local`. 구현 예정 (A) |
+| `/task_manager/state` | `std_msgs/msg/String` | 상태머신(A) | 누구나 (모니터링 · 시험) | — | 현재 단계 이름 (`IDLE`, `WAIT_READY`, `NAVIGATE`, `VERIFY_ARRIVAL`, `ALIGN`, `GRASP`, `CANCELING`, `SUCCEEDED`, `FAILED`). 단계가 바뀔 때 발행, QoS `transient_local`. 구현 완료 (A) |
 
 ### 3.1 Nav2 속도 명령 흐름 (Humble `nav2_bringup` 확인)
 
@@ -316,7 +316,7 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 그 외 (IK 확인, 파지, 대기 등) | 속도 0 |
 
 - twist_mux 같은 별도 패키지는 쓰지 않고 상태머신 노드 안에서 직접 선택한다.
-- 발행 규칙 (A, 2026-11-09, `mm_task_manager`): `/cmd_vel`을 10 Hz로 계속 발행하고, 속도 0도 계속 발행한다. 선택한 입력이 0.5 s 넘게 안 오면 0을 보낸다. 단계가 바뀌기 전에 받은 명령은 전달하지 않는다.
+- 발행 규칙 (A, 2026-11-09, `mm_task_manager`): `/cmd_vel`을 10 Hz로 계속 발행하고, 실행 중에는 속도 0도 계속 발행한다. 선택한 입력이 0.5 s 넘게 안 오면 0을 보낸다. 단계가 바뀌기 전에 받은 명령은 전달하지 않는다.
 - 근거: Ignition DiffDrive는 마지막 `/cmd_vel`을 계속 유지한다 (0.1 m/s를 한 번만 보냈을 때 5.7 s 동안 유지, 2026-11-09 측정). 그래서 0을 한 번만 보내면 안 된다. 이 규칙 덕분에 Nav2가 취소에 응답하지 않아도 상태머신이 0을 보내서 차체가 멈춘다.
 
 ### 5.1 정렬(D) → 파지(B) 전환 조건 (D 제안 초안)
