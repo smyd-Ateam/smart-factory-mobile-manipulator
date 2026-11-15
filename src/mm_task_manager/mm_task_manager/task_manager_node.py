@@ -30,6 +30,7 @@ from mm_task_manager import machine as sm
 from mm_task_manager.cmd_select import NAV, SERVO, CmdSelector, source_for
 from mm_task_manager.geometry import yaw_from_quaternion
 from mm_task_manager.mission import Mission, mission_from_dict
+from mm_task_manager.observe_pose_client import ObservePoseClient
 from mm_task_manager.result_log import append_jsonl
 from mm_task_manager.final_stop import FinalStop
 from mm_task_manager.run import NodeExit, run
@@ -114,6 +115,9 @@ class TaskManagerNode(Node):
         self.nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
         self.align_client = ActionClient(self, Align, '/servoing/align')
         self.grasp_client = ActionClient(self, Grasp, '/grasp/execute')
+        # 관측 자세 이동 /arm/observe_pose: 제안 초안 (A), 인터페이스는 B 확인 후 확정 예정.
+        # 상태머신 흐름(Nav2 도착 → 관측 자세 → Align)에는 아직 연결하지 않음 (B 설계 후 연결)
+        self.observe_pose_client = ObservePoseClient(self)
         self.goal_handles = {}
         self.cancel_requested = set()
 
