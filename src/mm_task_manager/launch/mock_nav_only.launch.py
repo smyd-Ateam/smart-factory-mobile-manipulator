@@ -59,9 +59,9 @@ def _setup(context):
         node('mock_nav_server', {'goal_log_path': os.path.join(out_dir, scenario + '_goals.csv')}),
         node('mock_cmd_publisher'),
         node('cmd_recorder', {'csv_path': os.path.join(out_dir, scenario + '.csv')}),
-        # recorder가 IDLE부터 받도록 task_manager는 2 s(wall) 뒤에 시작.
+        # recorder가 IDLE부터 받도록 task_manager는 3 s(wall) 뒤에 시작 (test_mock_scenarios.py와 같은 값).
         # S16~S22는 mock이 3개 더 떠서 discovery가 늦으므로 4 s
-        TimerAction(period=4.0 if full else 2.0,
+        TimerAction(period=4.0 if full else 3.0,
                     actions=[node('task_manager', {'result_log_path': result_log})]),
     ]
 

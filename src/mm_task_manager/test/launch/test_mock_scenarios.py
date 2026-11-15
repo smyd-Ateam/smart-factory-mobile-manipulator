@@ -27,7 +27,8 @@ import pytest
 PKG = 'mm_task_manager'
 OUT_ROOT = '~/.ros/mm_task_manager/launch_test'
 SCENARIO_TIMEOUT_SEC = 45.0
-START_DELAY_SEC = 2.0          # recorder가 IDLE부터 받도록 task_manager를 늦게 시작
+# recorder가 IDLE부터 받도록 task_manager를 늦게 시작 (2.0 s면 S7에서 WAIT_READY까지 놓친 적 있음)
+START_DELAY_SEC = 3.0
 FULL_START_DELAY_SEC = 4.0     # S16~S22는 mock이 3개 더 떠서 discovery가 늦음 (2.0 s면 WAIT_READY까지 놓친 적 있음)
 FINAL_ZERO_SEC = 1.0           # mission_test_room.yaml final_zero_sec
 

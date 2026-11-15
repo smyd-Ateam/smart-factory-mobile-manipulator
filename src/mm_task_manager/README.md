@@ -57,7 +57,7 @@ S1~S11은 기본 미션(object 모드, 물체 (1.40, 0))으로 돌고, mock 차�
 
 S16~S22는 `config/mock/full.yaml`(`nav_only: false`, 정렬 제한 3.0 + 1.0 s, 파지 제한 10 s)을 더하고 mock 3개를 같이 띄운다: `mock_align_server`(`/servoing/align`, 호출마다 결과 지정, 정렬 중 `/servoing/cmd_vel` 발행), `mock_grasp_server`(`/grasp/execute`, 호출마다 결과 지정, 받은 목표 기록), `mock_target_pose`(`/perception/target_pose`, `base_link` (0.25, 0, 0.02), 10 Hz, 끌 수 있음). 수동 실행(`mock_nav_only.launch.py`)도 S16~S22면 같은 설정과 mock을 띄우고 `task_manager`를 4 s 뒤에 시작한다. Align/Grasp 목표 기록은 `<out_dir>/<scenario>_align_goals.csv`, `<scenario>_grasp_goals.csv`.
 
-mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF), `mock_nav_server`(`/navigate_to_pose`), `mock_cmd_publisher`(충돌용 `/cmd_vel`), `cmd_recorder`(`/cmd_vel`, `/task_manager/state` CSV). `task_manager`는 2 s 늦게 시작한다
+mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF), `mock_nav_server`(`/navigate_to_pose`), `mock_cmd_publisher`(충돌용 `/cmd_vel`), `cmd_recorder`(`/cmd_vel`, `/task_manager/state` CSV). `task_manager`는 3 s 늦게 시작한다
 
 - `mock_nav_server`의 `teleport_on_success: true`(S13~S15): 성공 직전에 시험 전용 토픽 `/mock/robot_pose`로 목표 위치를 보내고, `mock_tf`가 차체를 그 위치로 옮긴다. 계산한 목표에 실제로 도착한 것처럼 도착 확인까지 시험하기 위함. mock끼리만 쓰는 토픽이라 interfaces.md에는 넣지 않는다
 
