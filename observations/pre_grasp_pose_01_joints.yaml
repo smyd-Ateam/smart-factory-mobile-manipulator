@@ -1,0 +1,44 @@
+A message was lost!!!
+	total count change:1
+	total count: 1---
+A message was lost!!!
+	total count change:1
+	total count: 2---
+header:
+  stamp:
+    sec: 3150
+    nanosec: 791000000
+  frame_id: ''
+name:
+- joint1
+- joint2
+- joint3
+- joint4
+- joint5
+- left_wheel_joint
+- right_wheel_joint
+position:
+- -3.4398415136761693e-19
+- -0.636802320000617
+- -0.9594446400012039
+- -1.4350828800001219
+- -0.0001570799999976272
+- -2.19997128933712e-07
+- -1.91409962723624e-09
+velocity:
+- 7.880620612983532e-20
+- -7.247602064887886e-15
+- -4.045487087588504e-14
+- 8.997961508197398e-14
+- -5.049220361994777e-17
+- -9.005810965437597e-19
+- -5.201455909524995e-18
+effort:
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+---

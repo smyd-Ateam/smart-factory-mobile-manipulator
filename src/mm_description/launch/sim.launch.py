@@ -14,8 +14,10 @@ from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
                             SetEnvironmentVariable)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import (Command, LaunchConfiguration,
-                                  PythonExpression)
+from launch.substitutions import (Command, 
+                                  LaunchConfiguration,
+                                  PythonExpression, 
+                                  PathJoinSubstitution)
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -26,7 +28,7 @@ ROBOT_NAME = 'mm_robot'
 def generate_launch_description():
     pkg = get_package_share_directory('mm_description')
     xacro_file = os.path.join(pkg, 'urdf', 'mm_robot.urdf.xacro')
-    world_file = os.path.join(pkg, 'worlds', WORLD_NAME + '.sdf')
+    world_file = PathJoinSubstitution([pkg, 'worlds', LaunchConfiguration('world')])
     default_rviz_file = os.path.join(pkg, 'rviz', 'base.rviz')
     rviz_file = LaunchConfiguration('rviz_config')
 
@@ -35,6 +37,12 @@ def generate_launch_description():
     headless = LaunchConfiguration('headless')
 
     args = [
+        DeclareLaunchArgument(
+            'world',
+            default_value='test_room.sdf',
+            description='Gazebo world file name'
+        ),
+
         DeclareLaunchArgument('render_engine', default_value='ogre',
                               description='ogre 또는 ogre2 (Mac VM, WSL 모두 ogre 권장)'),
         DeclareLaunchArgument('software_gl', default_value='false',

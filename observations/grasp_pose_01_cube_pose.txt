@@ -1,0 +1,8 @@
+
+Requesting state for world [test_room]...
+
+Model: [30]
+  - Name: grasp_cube_3cm
+  - Pose [ XYZ (m) ] [ RPY (rad) ]:
+    [0.265000 0.000000 0.015000]
+    [0.000000 -0.000000 0.000000]

@@ -1,0 +1,8 @@
+
+Requesting state for world [test_room]...
+
+Model: [39]
+  - Name: mm_robot
+  - Pose [ XYZ (m) ] [ RPY (rad) ]:
+    [-0.000000 0.000000 0.000010]
+    [0.000000 0.020038 0.000000]
