@@ -1,0 +1,68 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <gazebo reference="DaBai_DCW2_Link">
+    <sensor name="rgbd_camera" type="rgbd_camera">
+      <always_on>true</always_on>
+      <update_rate>30.0</update_rate>
+      <visualize>true</visualize>
+
+      <pose>0 0 0 3.14 3.14 -1.57</pose>
+
+      <camera>
+        <horizontal_fov>1.047</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.05</near>
+          <far>10.0</far>
+        </clip>
+      </camera>
+
+      <depth_camera>
+        <output_format>FLOAT32</output_format>
+      </depth_camera>
+
+      <topic>rgbd_camera</topic>
+      <camera_info_topic>rgbd_camera/camera_info</camera_info_topic>
+      <depth_image_topic>rgbd_camera/depth_image</depth_image_topic>
+      <points_topic>rgbd_camera/points</points_topic>
+      <image_topic>rgbd_camera/image</image_topic>
+
+      <ignition_frame_id>camera_optical_frame</ignition_frame_id>
+    </sensor>
+      <!-- 로봇팔 장착 일반 RGB 카메라 테스트 -->
+      <!-- 로봇팔 장착 RGB 카메라 -->
+      <sensor name="arm_rgb_test" type="camera">
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+
+        <!-- 기존 카메라 위치 및 방향 유지 -->
+        <pose>0 0 0 3.14 3.14 -1.57</pose>
+
+        <camera>
+          <horizontal_fov>1.047</horizontal_fov>
+
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+
+          <clip>
+            <near>0.05</near>
+            <far>10.0</far>
+          </clip>
+
+          <camera_info_topic>/camera/camera_info</camera_info_topic>
+        </camera>
+
+        <topic>/camera/image_raw</topic>
+        <ignition_frame_id>camera_optical_frame</ignition_frame_id>
+      </sensor>
+  </gazebo>
+
+</robot>

@@ -1,0 +1,63 @@
+<?xml version="1.0"?>
+<robot name="mm_robot"
+       xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- 1. 기존 차체 모델 불러오기 -->
+  <xacro:include
+    filename="$(find mm_description)/urdf/mm_base.urdf.xacro"/>
+
+  <!-- 2. 기존 DOFBOT 로봇팔 모델 불러오기 -->
+  <xacro:include
+    filename="$(find dofbot_description)/urdf/dofbot_links.xacro"/>
+
+  <xacro:include
+    filename="$(find dofbot_description)/urdf/dofbot_joints.xacro"/>
+
+  <!-- Gazebo RGB-D 카메라 센서 -->
+  <xacro:include
+    filename="$(find mm_description)/urdf/mm_camera.gazebo.xacro"/>
+
+  <!-- 3. 차체와 로봇팔 연결 -->
+  <joint name="arm_mount_joint" type="fixed">
+
+    <parent link="base_link"/>
+    <child link="arm_base_link"/>
+
+    <origin
+      xyz="0.100 0 0.010"
+      rpy="0 0 -1.5708"/>
+
+  </joint>
+  
+  <!-- Gazebo 로봇팔 관절 위치 제어기 -->
+  <xacro:macro name="arm_joint_controller" params="joint">
+
+    <gazebo>
+      <plugin
+        filename="ignition-gazebo-joint-position-controller-system"
+        name="ignition::gazebo::systems::JointPositionController">
+
+        <joint_name>${joint}</joint_name>
+        <topic>/mm_robot/${joint}/cmd_pos</topic>
+
+        <p_gain>5.0</p_gain>
+        <i_gain>0.0</i_gain>
+        <d_gain>0.1</d_gain>
+        <use_velocity_commands>true</use_velocity_commands>
+        <cmd_max>0.4</cmd_max>
+
+        <initial_position>0.0</initial_position>
+
+      </plugin>
+    </gazebo>
+
+  </xacro:macro>
+
+  <!-- joint1부터 joint5까지 제어기 생성 -->
+  <xacro:arm_joint_controller joint="joint1"/>
+  <xacro:arm_joint_controller joint="joint2"/>
+  <xacro:arm_joint_controller joint="joint3"/>
+  <xacro:arm_joint_controller joint="joint4"/>
+  <xacro:arm_joint_controller joint="joint5"/>
+
+</robot>

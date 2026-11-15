@@ -1,6 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="dofbot">
-
+<xacro:arg name="use_vj" default="true"/>
+<xacro:arg name="fix_gripper" default="false"/>
 
 
   <!-- Robotic Arm Joints -->
@@ -79,7 +80,7 @@
   </joint>
 
 
-
+  <xacro:unless value="$(arg fix_gripper)">
   <!-- Gripper Right Joints -->
   <joint name="gripper_joint" type="revolute">
     <origin xyz="0.012625 0.029275 0.00475" rpy="0 0 0.42401" />
@@ -127,6 +128,54 @@
     <axis xyz="0 0 1" />
     <mimic joint="gripper_joint" multiplier="1" offset="0" />
   </joint>
+  </xacro:unless>
+
+  <!-- Gazebo 관측 실험용: 그리퍼 관절 고정 -->
+  <xacro:if value="$(arg fix_gripper)">
+
+    <joint name="gripper_joint" type="fixed">
+      <parent link="link5"/>
+      <child link="rlink1"/>
+      <origin xyz="0.012625 0.029275 0.00475"
+              rpy="0 0 0.42401"/>
+    </joint>
+
+    <joint name="rlink_joint2" type="fixed">
+      <parent link="rlink1"/>
+      <child link="rlink2"/>
+      <origin xyz="0.027229 -0.012593 -0.0025"
+              rpy="0 0 1.1468"/>
+    </joint>
+
+    <joint name="rlink_joint3" type="fixed">
+      <parent link="link5"/>
+      <child link="rlink3"/>
+      <origin xyz="0.0045 0.047275 0.0045"
+              rpy="0 0 0.42401"/>
+    </joint>
+
+    <joint name="llink_joint1" type="fixed">
+      <parent link="link5"/>
+      <child link="llink1"/>
+      <origin xyz="-0.012375 0.029275 0.0045"
+              rpy="0 0 2.7292"/>
+    </joint>
+
+    <joint name="llink_joint2" type="fixed">
+      <parent link="llink1"/>
+      <child link="llink2"/>
+      <origin xyz="0.027362 0.012302 -0.0025"
+              rpy="0 0 -1.1584"/>
+    </joint>
+
+    <joint name="llink_joint3" type="fixed">
+      <parent link="link5"/>
+      <child link="llink3"/>
+      <origin xyz="-0.0045 0.047275 0.0045"
+              rpy="0 0 2.7292"/>
+    </joint>
+
+  </xacro:if>
 
 
 
@@ -157,23 +206,28 @@
   </joint>
   <link name="dummy_mimic_fixl1"/>
 
-  <!-- vj1 -->
-  <joint name="vj1_joint" type="continuous">
-    <origin xyz="0 0.09 0" rpy="0 0 0" />
-    <parent link="link5" />
-    <child link="vj1_link" />
-    <axis xyz="0 0 1" />
-  </joint>
-  <link name="vj1_link"/>
+  <!-- 기존 MoveIt2에서는 사용, 필요 없는 시뮬레이션에서는 제외 -->
+  <xacro:if value="$(arg use_vj)">
 
-  <!-- vj2 -->
-  <joint name="vj2_joint" type="continuous">
-    <origin xyz="0 0.0 0" rpy="0 0 0" />
-    <parent link="vj1_link" />
-    <child link="vj2_link" />
-    <axis xyz="0 1 0" />
-  </joint>
-  <link name="vj2_link"/>
+    <!-- vj1 -->
+    <joint name="vj1_joint" type="continuous">
+      <origin xyz="0 0.09 0" rpy="0 0 0"/>
+      <parent link="link5"/>
+      <child link="vj1_link"/>
+      <axis xyz="0 0 1"/>
+    </joint>
+    <link name="vj1_link"/>
+
+    <!-- vj2 -->
+    <joint name="vj2_joint" type="continuous">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <parent link="vj1_link"/>
+      <child link="vj2_link"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+    <link name="vj2_link"/>
+
+  </xacro:if>
 
 
 
