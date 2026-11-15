@@ -4,9 +4,9 @@
 
   <!-- ===== 치수 (단위 m, kg) : 임시값, 팔 장착하면서 조정 ===== -->
   <xacro:property name="PI" value="3.14159265"/>
-  <xacro:property name="chassis_x" value="0.40"/>
-  <xacro:property name="chassis_y" value="0.30"/>
-  <xacro:property name="chassis_z" value="0.10"/>
+  <xacro:property name="chassis_x" value="0.38"/>
+  <xacro:property name="chassis_y" value="0.28"/>
+  <xacro:property name="chassis_z" value="0.06"/>
   <xacro:property name="chassis_mass" value="5.0"/>
   <xacro:property name="ground_clearance" value="0.02"/>
 
@@ -21,7 +21,7 @@
 
   <xacro:property name="lidar_radius" value="0.035"/>
   <xacro:property name="lidar_height" value="0.04"/>
-  <xacro:property name="lidar_x" value="0.13"/>
+  <xacro:property name="lidar_x" value="0.18"/>
 
   <!-- base_link는 바퀴 축 높이(지면에서 wheel_radius)에 둔다 -->
   <xacro:property name="chassis_center_z" value="${ground_clearance + chassis_z/2 - wheel_radius}"/>
