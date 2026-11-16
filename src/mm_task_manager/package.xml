@@ -19,7 +19,6 @@
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
-  <!-- TODO(project_interfaces): Align/Grasp 액션 패키지가 생기면 추가 -->
 
   <test_depend>python3-pytest</test_depend>
   <test_depend>launch_testing</test_depend>
