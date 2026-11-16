@@ -9,6 +9,7 @@ find_package(geometry_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/Align.action"
   "action/Grasp.action"
+  "action/ObservePose.action"   # 제안 초안 (A), B 확인 전
   DEPENDENCIES geometry_msgs
 )
 
