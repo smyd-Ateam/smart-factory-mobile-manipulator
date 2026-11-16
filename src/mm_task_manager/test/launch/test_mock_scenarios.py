@@ -4,8 +4,9 @@ colcon test로 실행한다 (README 참고). 시나리오마다 mock 노드와 t
 task_manager가 스스로 끝나기를 SCENARIO_TIMEOUT_SEC까지만 기다린다 (멈춘 시나리오가 전체를 막지 않게).
 끝난 뒤 결과 기록(JSONL), /cmd_vel · /task_manager/state 기록(CSV),
 mock_nav_server가 받은 이동 목표(CSV)를 기대값과 비교한다.
-S16~S22(정렬 · 파지까지, nav_only false)는 mock Align/Grasp 서버와 mock target_pose를 같이 띄우고
-받은 Align/Grasp 목표(CSV)도 비교한다.
+S16~S23(정렬 · 파지까지, nav_only false)는 mock Align/Grasp 서버와 mock target_pose를 같이 띄우고
+받은 Align/Grasp 목표(CSV)도 비교한다. 정렬 중 Near→Pre-grasp 전환 요청(결과 기록 ·
+task_manager "not sent" 경고 로그)도 확인한다 (기준 0.35 m는 PR #1 답변 대기, 확정 전).
 """
 
 import csv
@@ -29,7 +30,7 @@ OUT_ROOT = '~/.ros/mm_task_manager/launch_test'
 SCENARIO_TIMEOUT_SEC = 45.0
 # recorder가 IDLE부터 받도록 task_manager를 늦게 시작 (2.0 s면 S7에서 WAIT_READY까지 놓친 적 있음)
 START_DELAY_SEC = 3.0
-FULL_START_DELAY_SEC = 4.0     # S16~S22는 mock이 3개 더 떠서 discovery가 늦음 (2.0 s면 WAIT_READY까지 놓친 적 있음)
+FULL_START_DELAY_SEC = 4.0     # S16~S23은 mock이 3개 더 떠서 discovery가 늦음 (2.0 s면 WAIT_READY까지 놓친 적 있음)
 FINAL_ZERO_SEC = 1.0           # mission_test_room.yaml final_zero_sec
 
 OK = ['IDLE', 'WAIT_READY', 'NAVIGATE', 'VERIFY_ARRIVAL', 'SUCCEEDED']
@@ -73,6 +74,7 @@ EXPECTED = {
     's21_no_target_pose': ('FAILED', 'OBJECT_NOT_FOUND', 'target_pose_stale', False, False,
                            GRASP_FAIL),
     's22_grasp_miss': ('FAILED', 'GRASP_MISS', '', False, False, GRASP_FAIL),
+    's23_target_far': ('SUCCEEDED', '', '', False, False, FULL_OK),
 }
 
 # 정렬 · 파지 시나리오: (Align 호출마다 standoff_m, Grasp 호출 수, 실패 단계, 재정렬 횟수)
@@ -85,7 +87,20 @@ FULL = {
     's20_align_timeout': ([0.25], 0, 'ALIGN', 0),
     's21_no_target_pose': ([0.25], 0, 'GRASP', 0),
     's22_grasp_miss': ([0.25], 1, 'GRASP', 0),
+    's23_target_far': ([0.25], 1, '', 0),
 }
+
+# mock_target_pose가 발행하는 물체 x (base_link). full.yaml 0.25, S23만 0.40 (전환 기준보다 멂)
+TARGET_X = {name: 0.25 for name in FULL}
+TARGET_X['s23_target_far'] = 0.40
+
+# 정렬 중 Near→Pre-grasp 전환을 요청한 거리 (결과 기록 pregrasp_request_distance_m).
+# None = 요청 없음 → task_manager "not sent" 경고도 없어야 함, 값이 있으면 경고 정확히 한 번
+# (재정렬이 있어도 한 실행에 한 번). S21은 target_pose가 없어서 요청 없음
+PREGRASP_DISTANCE = {name: None for name in EXPECTED}
+PREGRASP_DISTANCE.update({name: 0.25 for name in FULL
+                          if name not in ('s21_no_target_pose', 's23_target_far')})
+NOT_SENT_LOG = 'not sent: request interface not decided yet'
 SERVO_VX = 0.03   # mock_align_server가 정렬 중 /servoing/cmd_vel로 보내는 값 (full.yaml)
 
 # 기본 미션 파일 (config/ 기준). 없으면 mission_test_room.yaml (object 모드, 물체 (1.40, 0))
@@ -270,7 +285,7 @@ class TestResult(unittest.TestCase):
         for g in grasps:
             # mock_target_pose 값이 그대로 (base_link, 정렬 뒤 찍힌 1 s 이내 값)
             self.assertEqual((g['target_class'], g['frame_id']), ('block', 'base_link'))
-            self.assertAlmostEqual(float(g['x']), 0.25, delta=1e-6)
+            self.assertAlmostEqual(float(g['x']), TARGET_X[scenario], delta=1e-6)
             # 노드마다 /clock을 받는 시점이 한 스텝(0.01 s)쯤 달라 약간 음수가 될 수 있음
             self.assertGreaterEqual(float(g['age_sec']), -0.05)
             self.assertLessEqual(float(g['age_sec']), 1.0)
@@ -284,6 +299,18 @@ class TestResult(unittest.TestCase):
                  if any(a + 0.3 <= t <= b - 0.15 for a, b in align_windows)]
         if scenario != 's20_align_timeout':
             self.assertTrue(servo and all(abs(v - SERVO_VX) < 1e-6 for v in servo), servo[:5])
+
+    def test_pregrasp_request(self, proc_output, task_manager, out_dir, scenario):
+        # 결과 기록과 경고 로그가 같은 조건에서만 나오는지 (nav_only 시나리오 · 먼 물체 · 물체 없음은 0번)
+        record, _, _ = _load(out_dir)
+        expected = PREGRASP_DISTANCE[scenario]
+        got = record['pregrasp_request_distance_m']
+        if expected is None:
+            self.assertIsNone(got)
+        else:
+            self.assertAlmostEqual(got, expected, delta=1e-6)
+        text = ''.join(io.text.decode(errors='replace') for io in proc_output[task_manager])
+        self.assertEqual(text.count(NOT_SENT_LOG), 0 if expected is None else 1)
 
     def test_nav_goal_mode(self, out_dir, scenario):
         record, _, _ = _load(out_dir)

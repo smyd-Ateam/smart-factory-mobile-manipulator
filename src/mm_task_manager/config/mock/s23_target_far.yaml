@@ -1,0 +1,5 @@
+# S23 물체가 전환 기준보다 멂: 정렬 중 target_pose 0.40 m → Near→Pre-grasp 전환 요청 없음, 파지 성공 → SUCCEEDED
+# (전환 기준 pregrasp_switch_distance_m 0.35 m는 PR #1 답변 대기 중, 확정 전. 값이 바뀌면 x도 기준보다 크게 맞출 것)
+mock_target_pose:
+  ros__parameters:
+    x: 0.40

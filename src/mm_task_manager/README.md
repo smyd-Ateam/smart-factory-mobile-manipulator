@@ -2,7 +2,7 @@
 
 작업 상태머신: Nav2 이동 → 도착 확인 → 정렬(D) → 파지(B), 단계별 `/cmd_vel` 선택 (`docs/interfaces.md` 5.0)
 
-> 작성 중. `nav_only: true`면 이동 + 도착 확인까지, `false`면 정렬(`/servoing/align`) · 파지(`/grasp/execute`)까지 진행한다. 실제 정렬 · 파지 서버와는 아직 연동 시험 전 (mock으로만 확인, S16~S22).
+> 작성 중. `nav_only: true`면 이동 + 도착 확인까지, `false`면 정렬(`/servoing/align`) · 파지(`/grasp/execute`)까지 진행한다. 실제 정렬 · 파지 서버와는 아직 연동 시험 전 (mock으로만 확인, S16~S23).
 
 ## 빌드
 
@@ -52,10 +52,11 @@ mock 결과: `<out_dir>/<scenario>.jsonl` (상태머신 결과), `<out_dir>/<sce
 | `s20_align_timeout` | 정렬 서버 응답 없음 | `timeout_sec`(3.0) + 여유(1.0) 뒤 취소 → `ALIGN_TIMEOUT` / `timeout` |
 | `s21_no_target_pose` | 정렬 뒤 `target_pose` 안 옴 | 1.0 s 뒤 `OBJECT_NOT_FOUND` / `target_pose_stale`, Grasp 안 보냄 |
 | `s22_grasp_miss` | `GRASP_MISS` | 재정렬 없이 FAILED (재정렬은 `IK_FAILED`만) |
+| `s23_target_far` | 정렬 중 물체 0.40 m (Near→Pre-grasp 전환 기준보다 멂) | 전환 요청 없음, SUCCEEDED |
 
 S1~S11은 기본 미션(object 모드, 물체 (1.40, 0))으로 돌고, mock 차체가 (1.0, 0) 근처라 목표는 (1.0, 0, 0)이다.
 
-S16~S22는 `config/mock/full.yaml`(`nav_only: false`, 정렬 제한 3.0 + 1.0 s, 파지 제한 10 s)을 더하고 mock 3개를 같이 띄운다: `mock_align_server`(`/servoing/align`, 호출마다 결과 지정, 정렬 중 `/servoing/cmd_vel` 발행), `mock_grasp_server`(`/grasp/execute`, 호출마다 결과 지정, 받은 목표 기록), `mock_target_pose`(`/perception/target_pose`, `base_link` (0.25, 0, 0.02), 10 Hz, 끌 수 있음). 수동 실행(`mock_nav_only.launch.py`)도 S16~S22면 같은 설정과 mock을 띄우고 `task_manager`를 4 s 뒤에 시작한다. Align/Grasp 목표 기록은 `<out_dir>/<scenario>_align_goals.csv`, `<scenario>_grasp_goals.csv`.
+S16~S23은 `config/mock/full.yaml`(`nav_only: false`, 정렬 제한 3.0 + 1.0 s, 파지 제한 10 s)을 더하고 mock 3개를 같이 띄운다: `mock_align_server`(`/servoing/align`, 호출마다 결과 지정, 정렬 중 `/servoing/cmd_vel` 발행), `mock_grasp_server`(`/grasp/execute`, 호출마다 결과 지정, 받은 목표 기록), `mock_target_pose`(`/perception/target_pose`, `base_link` (0.25, 0, 0.02), 10 Hz, 끌 수 있음). 수동 실행(`mock_nav_only.launch.py`)도 S16~S23이면 같은 설정과 mock을 띄우고 `task_manager`를 4 s 뒤에 시작한다. Align/Grasp 목표 기록은 `<out_dir>/<scenario>_align_goals.csv`, `<scenario>_grasp_goals.csv`.
 
 mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF), `mock_nav_server`(`/navigate_to_pose`), `mock_cmd_publisher`(충돌용 `/cmd_vel`), `cmd_recorder`(`/cmd_vel`, `/task_manager/state` CSV). `task_manager`는 3 s 늦게 시작한다
 
@@ -125,7 +126,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q test --ignore=test/launch
 
 `~/.local`에 pytest를 따로 설치한 환경에서는 ROS의 `launch_testing` 플러그인과 충돌하므로 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`을 붙인다 (`visual_servoing` README 참고). `test/launch`는 launch_testing 플러그인이 있어야 하므로 제외한다.
 
-mock 시나리오 S1~S22 자동 시험 (launch_testing, 약 6.5분):
+mock 시나리오 S1~S23 자동 시험 (launch_testing, 약 6.5분):
 
 ```bash
 PYTHONNOUSERSITE=1 colcon test --packages-select mm_task_manager
@@ -134,8 +135,9 @@ PYTHONNOUSERSITE=1 colcon test-result --verbose
 
 - 시나리오마다 mock 노드와 `task_manager`를 띄우고, `task_manager`가 스스로 끝나기를 45 s까지만 기다린다 (멈춘 시나리오가 전체를 막지 않음)
 - 확인: 결과 기록 값, `/task_manager/state` 단계 순서, 0이 아닌 `/cmd_vel`은 NAVIGATE · ALIGN 동안에만, 끝난 뒤 0만 약 1 s 발행 후 종료, 시나리오별 조건, `mock_nav_server`가 받은 이동 목표(1 mm / 0.001 rad 이내), 이동 목표 모드와 물체까지 거리
-- S16~S22 추가 확인: mock이 받은 Align 목표(`standoff_m` 순서, `timeout_sec`) · Grasp 목표(호출 수, `base_link`, pose 나이 1.0 s 이내), 재정렬 횟수 · 실패 단계, ALIGN 동안 `/servoing/cmd_vel` 전달. mock이 3개 더 떠서 discovery가 늦으므로 `task_manager`는 4 s 늦게 시작한다
-- 마지막 결과: `~/.ros/mm_task_manager/launch_test/<시나리오>/` (`result.jsonl`, `record.csv`, `goals.csv`, S16~S22는 `align_goals.csv`, `grasp_goals.csv`)
+- S16~S23 추가 확인: mock이 받은 Align 목표(`standoff_m` 순서, `timeout_sec`) · Grasp 목표(호출 수, `base_link`, pose 나이 1.0 s 이내), 재정렬 횟수 · 실패 단계, ALIGN 동안 `/servoing/cmd_vel` 전달. mock이 3개 더 떠서 discovery가 늦으므로 `task_manager`는 4 s 늦게 시작한다
+- Near→Pre-grasp 전환 요청 (전체 시나리오): 결과 기록 `pregrasp_request_distance_m`와 `task_manager`의 "not sent" 경고 횟수. 정렬 중 물체 0.25 m인 S16~S20 · S22는 0.25 m에서 한 번(재정렬해도 한 번), 나머지(nav_only, S21 물체 없음, S23 먼 물체)는 없음. 기준 0.35 m는 PR #1 답변 대기 중이라 확정 전
+- 마지막 결과: `~/.ros/mm_task_manager/launch_test/<시나리오>/` (`result.jsonl`, `record.csv`, `goals.csv`, S16~S23은 `align_goals.csv`, `grasp_goals.csv`)
 - JUnit 결과(`build/mm_task_manager/pytest.xml`)에는 launch 시험 파일 전체가 테스트 1개로 나온다. 실패하면 `log/latest_test/mm_task_manager/stdout_stderr.log`에 시나리오별 실패가 나온다
 - `/task_manager/state`의 IDLE은 시작 직후 약 0.1 s만 유지되고 depth 1 `transient_local`이라, 늦게 연결된 구독자는 못 받을 수 있다
 

@@ -32,7 +32,7 @@ from mm_task_manager import machine as sm
 from mm_task_manager.cmd_select import NAV, SERVO, CmdSelector, source_for
 from mm_task_manager.geometry import yaw_from_quaternion
 from mm_task_manager.mission import Mission, mission_from_dict
-from mm_task_manager.pose_transition import horizontal_distance
+from mm_task_manager.align_distance import target_distance_event
 from mm_task_manager.result_log import append_jsonl
 from mm_task_manager.final_stop import FinalStop
 from mm_task_manager.run import NodeExit, run
@@ -310,10 +310,10 @@ class TaskManagerNode(Node):
         self.latest_target_pose = msg
         if self.machine.state == State.GRASP:
             self._check_grasp_request(self._now())
-        elif self.machine.state == State.ALIGN:
-            p = msg.pose.position
-            self._dispatch(sm.TargetDistance(now=self._now(),
-                                             distance_m=horizontal_distance(p.x, p.y)))
+        p = msg.pose.position
+        ev = target_distance_event(self.machine.state, p.x, p.y, self._now())
+        if ev is not None:
+            self._dispatch(ev)
 
     def _check_grasp_request(self, now):
         req = self.grasp_request
