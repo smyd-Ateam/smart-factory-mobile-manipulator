@@ -4,6 +4,8 @@
 액션 · 서비스 호출, TF 조회, 타이머, /cmd_vel 선택 발행 (docs/interfaces.md 5.0).
 nav_only false면 도착 확인 뒤 /servoing/align(D) → /grasp/execute(B)까지 진행한다 (4장).
 Grasp 목표의 target_pose는 /perception/target_pose(C) 중 정렬 뒤 찍힌 1 s 이내 값 (target_pose.py).
+정렬 중에는 같은 토픽의 물체 수평거리로 Near→Pre-grasp 전환을 판단한다 (pose_transition.py).
+전환 요청 방식은 D·B 확인 전이라 요청은 로그만 남긴다.
 """
 
 import datetime
@@ -30,6 +32,7 @@ from mm_task_manager import machine as sm
 from mm_task_manager.cmd_select import NAV, SERVO, CmdSelector, source_for
 from mm_task_manager.geometry import yaw_from_quaternion
 from mm_task_manager.mission import Mission, mission_from_dict
+from mm_task_manager.pose_transition import horizontal_distance
 from mm_task_manager.result_log import append_jsonl
 from mm_task_manager.final_stop import FinalStop
 from mm_task_manager.run import NodeExit, run
@@ -268,6 +271,12 @@ class TaskManagerNode(Node):
             # 바로 보내지 않고, 정렬 뒤 찍힌 target_pose가 오면 보냄 (_check_grasp_request)
             self.grasp_request = GraspPoseRequest(cmd.token, self._now(), cmd.max_pose_age_sec)
             self._check_grasp_request(self._now())
+        elif isinstance(cmd, sm.RequestObservePose):
+            # TODO: PR #1 답변 대기 중 (D·B). 관측 자세 요청 액션이 확정되면 여기서 실제로 보낸다
+            self.get_logger().warn(
+                f'observe pose {cmd.pose_name} requested at {cmd.distance_m:.3f} m '
+                f'(< {self.mission.pregrasp_switch_distance_m:.2f} m), not sent: '
+                'request interface not decided yet')
         elif isinstance(cmd, sm.CancelGoal):
             self._cancel(cmd.token)
         elif isinstance(cmd, sm.WriteRecord):
@@ -301,6 +310,10 @@ class TaskManagerNode(Node):
         self.latest_target_pose = msg
         if self.machine.state == State.GRASP:
             self._check_grasp_request(self._now())
+        elif self.machine.state == State.ALIGN:
+            p = msg.pose.position
+            self._dispatch(sm.TargetDistance(now=self._now(),
+                                             distance_m=horizontal_distance(p.x, p.y)))
 
     def _check_grasp_request(self, now):
         req = self.grasp_request

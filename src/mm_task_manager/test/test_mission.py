@@ -3,6 +3,7 @@ import os
 import pytest
 
 from mm_task_manager.mission import mission_from_dict
+from mm_task_manager.pose_transition import NEAR_TO_PREGRASP_THRESHOLD_M
 
 CONFIG = os.path.join(os.path.dirname(__file__), '..', 'config', 'mission_test_room.yaml')
 GOAL_MODE_CONFIG = os.path.join(os.path.dirname(__file__), '..', 'config', 'mock',
@@ -83,6 +84,7 @@ def test_repeated_standoff_warns():
     'ready_timeout_sec', 'tf_max_age_sec', 'nav_timeout_sec', 'cancel_timeout_sec',
     'arrival_xy_tol', 'arrival_yaw_tol', 'cmd_rate_hz', 'cmd_input_timeout_sec',
     'clock_watchdog_sec', 'align_timeout_sec', 'grasp_timeout_sec', 'target_pose_max_age_sec',
+    'pregrasp_switch_distance_m',
 ])
 def test_positive_values(key):
     with pytest.raises(ValueError, match=key):
@@ -200,3 +202,14 @@ def test_nav_standoff_margin():
     assert m.approach_distance == pytest.approx(0.50)
     with pytest.raises(ValueError, match='nav_standoff_margin_m'):
         mission_from_dict(object_params(nav_standoff_margin_m=-0.01))
+
+
+def test_pregrasp_switch_distance_defaults_to_provisional_constant():
+    # 기본값은 pose_transition의 상수 한 곳에서 온다 (PR #1 답변 대기, 확정 전)
+    m, _ = mission_from_dict(base_params())
+    assert m.pregrasp_switch_distance_m == NEAR_TO_PREGRASP_THRESHOLD_M
+
+
+def test_pregrasp_switch_distance_can_be_overridden():
+    m, _ = mission_from_dict(base_params(pregrasp_switch_distance_m=0.4))
+    assert m.pregrasp_switch_distance_m == 0.4

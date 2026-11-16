@@ -10,6 +10,7 @@ from typing import Optional, Tuple
 
 from mm_task_manager import codes
 from mm_task_manager.geometry import approach_goal, arrival_error, arrival_ok, tf_fresh
+from mm_task_manager.pose_transition import PRE_GRASP, needs_pregrasp
 from mm_task_manager.retry import REALIGN, after_grasp_failure, standoff_for
 from mm_task_manager.states import TERMINAL_STATES, State
 
@@ -85,6 +86,12 @@ class GraspResult:
 
 
 @dataclass(frozen=True)
+class TargetDistance:
+    now: float
+    distance_m: float       # /perception/target_pose(base_link)의 물체 수평거리 (interfaces.md 5.6)
+
+
+@dataclass(frozen=True)
 class CancelDone:
     now: float
     token: int
@@ -126,6 +133,13 @@ class SendGraspGoal:
 
 
 @dataclass(frozen=True)
+class RequestObservePose:
+    """정렬 중 관측 자세 전환 요청. 요청 방식은 D·B 확인 전이라 노드는 아직 로그만 남긴다."""
+    pose_name: str
+    distance_m: float       # 요청하게 만든 물체 수평거리
+
+
+@dataclass(frozen=True)
 class CancelGoal:
     token: int
 
@@ -157,6 +171,7 @@ class TaskMachine:
         self._ready_reason = codes.NO_READY_STATUS
 
         self._realign_count = 0
+        self._pregrasp_distance = None      # Near→Pre-grasp 전환을 요청한 거리 (한 실행에 한 번)
         self._standoffs_used = []
         self._arrival = None
         self._start_time = None
@@ -242,6 +257,8 @@ class TaskMachine:
         return self._send_align(ev.now)
 
     def _align(self, ev):
+        if isinstance(ev, TargetDistance):
+            return self._maybe_request_pregrasp(ev)
         if isinstance(ev, AlignResult) and ev.token == self._active_token:
             if ev.success:
                 return self._send_grasp(ev.now)
@@ -286,6 +303,15 @@ class TaskMachine:
         return cmds
 
     # ---- 도우미 ----
+
+    def _maybe_request_pregrasp(self, ev):
+        # 팔이 이미 pre-grasp 쪽으로 갔다고 보고 재정렬 때도 다시 요청하지 않는다
+        if self._pregrasp_distance is not None:
+            return []
+        if not needs_pregrasp(ev.distance_m, self.m.pregrasp_switch_distance_m):
+            return []
+        self._pregrasp_distance = ev.distance_m
+        return [RequestObservePose(pose_name=PRE_GRASP, distance_m=ev.distance_m)]
 
     def _not_ready_reason(self, ev):
         if ev.cmd_vel_other_publishers > 0:
@@ -360,6 +386,7 @@ class TaskMachine:
             'aborted': aborted,
             'cancel_no_response': cancel_no_response,
             'realign_count': self._realign_count,
+            'pregrasp_request_distance_m': self._pregrasp_distance,
             'standoffs_used': list(self._standoffs_used),
             'arrival': self._arrival,
             'stage_durations': dict(self._durations),

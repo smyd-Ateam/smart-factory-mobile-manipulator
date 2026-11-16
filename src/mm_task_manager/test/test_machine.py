@@ -6,9 +6,11 @@ from mm_task_manager import codes
 from mm_task_manager.machine import (NAV_ABORTED, NAV_CANCELED, NAV_REJECTED, NAV_SUCCEEDED,
                                      AlignResult, CancelDone, CancelGoal, ClockStopped,
                                      GraspResult, NavResult, PoseSample, PublishTargetClass,
-                                     ReadyStatus, SendAlignGoal, SendGraspGoal, SendNavGoal,
-                                     Start, TaskMachine, Tick, WriteRecord)
+                                     ReadyStatus, RequestObservePose, SendAlignGoal,
+                                     SendGraspGoal, SendNavGoal, Start, TargetDistance,
+                                     TaskMachine, Tick, WriteRecord)
 from mm_task_manager.mission import Mission
+from mm_task_manager.pose_transition import PRE_GRASP
 from mm_task_manager.states import State
 
 GOAL = (1.0, 2.0, 0.5)
@@ -584,3 +586,81 @@ def test_object_mode_failure_before_goal_records_no_goal():
     rec = record_of(m.handle(Tick(now=30.1)))
     assert rec['goal'] is None
     assert rec['nav_goal_mode'] == 'object'
+
+
+# ---- 정렬 중 Near→Pre-grasp 전환 요청 (거리 기준 0.35 m는 PR #1 답변 대기, 확정 전) ----
+
+def test_pregrasp_requested_when_target_comes_within_threshold():
+    m = make(nav_only=False)
+    to_align(m)
+    cmds = m.handle(TargetDistance(now=11.0, distance_m=0.30))
+    assert cmds == [RequestObservePose(pose_name=PRE_GRASP, distance_m=0.30)]
+    assert m.state == State.ALIGN       # 전환 요청만 하고 정렬은 계속
+
+
+def test_pregrasp_not_requested_while_target_is_far():
+    m = make(nav_only=False)
+    to_align(m)
+    assert m.handle(TargetDistance(now=11.0, distance_m=0.50)) == []
+
+
+def test_pregrasp_threshold_comes_from_mission():
+    m = make(nav_only=False, pregrasp_switch_distance_m=0.45)
+    to_align(m)
+    assert of_type(m.handle(TargetDistance(now=11.0, distance_m=0.40)), RequestObservePose)
+
+
+def test_pregrasp_requested_only_once():
+    m = make(nav_only=False)
+    to_align(m)
+    m.handle(TargetDistance(now=11.0, distance_m=0.30))
+    assert m.handle(TargetDistance(now=11.1, distance_m=0.28)) == []
+
+
+def test_pregrasp_not_requested_again_after_realign():
+    # 팔은 이미 pre-grasp 쪽으로 보냈으므로 재정렬 때 다시 요청하지 않는다
+    m = make(nav_only=False)
+    grasp = to_grasp(m)
+    m.handle(TargetDistance(now=19.0, distance_m=0.30))     # GRASP 중이라 무시
+    cmds = m.handle(GraspResult(now=30.0, token=grasp.token, success=False,
+                                error_code=codes.IK_FAILED))
+    assert m.state == State.ALIGN and of_type(cmds, SendAlignGoal)
+    # 첫 정렬 땐 거리 값을 못 받아 요청이 없었으므로, 재정렬 중 처음 들어오면 요청한다
+    assert of_type(m.handle(TargetDistance(now=31.0, distance_m=0.30)), RequestObservePose)
+    assert m.handle(TargetDistance(now=31.1, distance_m=0.29)) == []
+
+
+def test_pregrasp_requested_in_first_align_not_repeated_in_realign():
+    m = make(nav_only=False)
+    goal = to_align(m)
+    m.handle(TargetDistance(now=11.0, distance_m=0.30))
+    grasp = of_type(m.handle(AlignResult(now=20.0, token=goal.token, success=True)),
+                    SendGraspGoal)[0]
+    m.handle(GraspResult(now=30.0, token=grasp.token, success=False,
+                         error_code=codes.IK_FAILED))
+    assert m.state == State.ALIGN
+    assert m.handle(TargetDistance(now=31.0, distance_m=0.30)) == []
+
+
+def test_target_distance_ignored_outside_align():
+    m = make(nav_only=False)
+    to_navigate(m)
+    assert m.handle(TargetDistance(now=5.0, distance_m=0.10)) == []
+    m2 = make(nav_only=False)
+    to_grasp(m2)
+    assert m2.handle(TargetDistance(now=21.0, distance_m=0.10)) == []
+
+
+def test_record_has_pregrasp_request_distance():
+    m = make(nav_only=False)
+    grasp = to_grasp(m)
+    rec = record_of(m.handle(GraspResult(now=30.0, token=grasp.token, success=True)))
+    assert rec['pregrasp_request_distance_m'] is None
+
+    m = make(nav_only=False)
+    goal = to_align(m)
+    m.handle(TargetDistance(now=11.0, distance_m=0.30))
+    grasp = of_type(m.handle(AlignResult(now=20.0, token=goal.token, success=True)),
+                    SendGraspGoal)[0]
+    rec = record_of(m.handle(GraspResult(now=30.0, token=grasp.token, success=True)))
+    assert rec['pregrasp_request_distance_m'] == 0.30

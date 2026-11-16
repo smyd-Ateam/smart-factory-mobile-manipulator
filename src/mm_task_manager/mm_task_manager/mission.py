@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 from mm_task_manager import codes
+from mm_task_manager.pose_transition import NEAR_TO_PREGRASP_THRESHOLD_M
 
 
 @dataclass
@@ -52,6 +53,9 @@ class Mission:
     standoff_list: List[float] = field(default_factory=lambda: [0.25, 0.22, 0.28])
 
     observe_pose_required: bool = False   # TODO(B, C)
+    # 정렬 중 Near→Pre-grasp 전환 거리 (m, 물체 수평거리). TODO: PR #1 답변 대기 중, 0.35m 확정 전.
+    # 값은 pose_transition.NEAR_TO_PREGRASP_THRESHOLD_M 한 곳에서 관리
+    pregrasp_switch_distance_m: float = NEAR_TO_PREGRASP_THRESHOLD_M
 
     result_log_path: str = '~/.ros/mm_task_manager/results.jsonl'
 
@@ -76,12 +80,12 @@ _FLOAT_FIELDS = ('goal_x', 'goal_y', 'goal_yaw', 'object_x', 'object_y', 'nav_st
                  'nav_timeout_sec', 'cancel_timeout_sec', 'settle_sec', 'arrival_xy_tol',
                  'arrival_yaw_tol', 'cmd_rate_hz', 'cmd_input_timeout_sec',
                  'clock_watchdog_sec', 'align_timeout_sec', 'align_margin_sec',
-                 'grasp_timeout_sec', 'target_pose_max_age_sec')
+                 'grasp_timeout_sec', 'target_pose_max_age_sec', 'pregrasp_switch_distance_m')
 
 _POSITIVE_FIELDS = ('ready_timeout_sec', 'tf_max_age_sec', 'nav_timeout_sec',
                     'cancel_timeout_sec', 'arrival_xy_tol', 'arrival_yaw_tol', 'cmd_rate_hz',
                     'cmd_input_timeout_sec', 'clock_watchdog_sec', 'align_timeout_sec',
-                    'grasp_timeout_sec', 'target_pose_max_age_sec')
+                    'grasp_timeout_sec', 'target_pose_max_age_sec', 'pregrasp_switch_distance_m')
 
 _NON_NEGATIVE_FIELDS = ('settle_sec', 'align_margin_sec', 'ready_min_wait_sec', 'final_zero_sec',
                         'nav_standoff_margin_m')
