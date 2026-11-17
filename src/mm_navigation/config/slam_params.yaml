@@ -31,7 +31,14 @@ slam_toolbox:
     map_update_interval: 5.0
     resolution: 0.05
     min_laser_range: 0.12  # 변경: 라이다 사양
-    max_laser_range: 5.5  # 변경: 라이다 사양 8.0 m보다 짧게. 차체가 캐스터 간극만큼 앞으로 기울어 전방 빔이 바닥에 닿을 수 있으므로(차체 높이 0.06 m 새 차체 기준, 간극 3 mm일 때 약 6 m, 2 mm일 때 약 9 m), 바닥 반사가 지도에 찍히지 않게 여유를 두고 그 안쪽만 사용
+    # 변경: 라이다 사양 8.0 m보다 짧게. 차체가 캐스터 간극만큼 앞으로 기울어 전방 빔이 바닥 쪽을 향하므로
+    # 바닥 반사가 지도에 찍히지 않게 여유를 두고 그 안쪽만 사용.
+    # 현재 치수(chassis_z 0.10 m, caster_gap 0.002 m, caster_x 0.15 m, lidar_x 0.13 m) 기준:
+    # 기울기 atan(0.002/0.15) = 0.0133 rad, 기운 상태 라이다 높이 약 0.163 m → 바닥 닿는 거리 약 12.2 m
+    # (Gazebo 측정 pitch 0.01335 rad와 일치). 사양 8.0 m 안에서는 바닥에 안 닿으므로 5.5 m는 안전한 여유값.
+    # 확인: test/test_lidar_floor_range.py (xacro 치수로 계산, 여유 1.0 m)
+    # TODO: PR #4 머지되면(차체 0.06 m, lidar_x 0.18 m) 재계산 필요. 같은 식으로는 약 9.2 m (간극 3 mm면 약 6.1 m)
+    max_laser_range: 5.5
     minimum_time_interval: 0.5
     transform_timeout: 0.2
     tf_buffer_duration: 30.
