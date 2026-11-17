@@ -28,7 +28,8 @@ import pytest
 PKG = 'mm_task_manager'
 OUT_ROOT = '~/.ros/mm_task_manager/launch_test'
 SCENARIO_TIMEOUT_SEC = 45.0
-# recorder가 IDLE부터 받도록 task_manager를 늦게 시작 (2.0 s면 S7에서 WAIT_READY까지 놓친 적 있음)
+# recorder가 먼저 뜨도록 task_manager를 늦게 시작. WAIT_READY부터 받는 것은 이 지연이 아니라
+# wait_state_subscribers(common.yaml)가 맡는다 (새로 뜬 task_manager의 discovery가 2~3 s 걸릴 수 있음)
 START_DELAY_SEC = 3.0
 FULL_START_DELAY_SEC = 4.0     # S16~S23은 mock이 3개 더 떠서 discovery가 늦음 (2.0 s면 WAIT_READY까지 놓친 적 있음)
 FINAL_ZERO_SEC = 1.0           # mission_test_room.yaml final_zero_sec
@@ -205,8 +206,9 @@ class TestResult(unittest.TestCase):
 
     def test_state_sequence(self, out_dir, scenario):
         # /task_manager/state: 단계가 바뀔 때만, interfaces.md v0.14 이름으로
-        # IDLE은 노드 시작 직후 약 0.1 s만 유지되고 depth 1 transient_local이라,
-        # discovery가 늦은 구독자는 못 받을 수 있다 → 맨 앞 IDLE만 선택
+        # IDLE은 depth 1 transient_local이라 recorder가 붙은 직후 WAIT_READY가 이력을 덮으면
+        # 못 받을 수 있다 → 맨 앞 IDLE만 선택. WAIT_READY부터는 빠지면 안 된다
+        # (mock 설정 wait_state_subscribers: 1로 recorder가 붙은 뒤 출발, common.yaml)
         _, states, _ = _load(out_dir)
         got = [s for _, _, s in states]
         expected = EXPECTED[scenario][5]

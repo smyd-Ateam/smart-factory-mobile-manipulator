@@ -36,6 +36,7 @@ from mm_task_manager.align_distance import target_distance_event
 from mm_task_manager.result_log import append_jsonl
 from mm_task_manager.final_stop import FinalStop
 from mm_task_manager.run import NodeExit, run
+from mm_task_manager.start_gate import can_start
 from mm_task_manager.states import TERMINAL_STATES, State, StateReporter
 from mm_task_manager.target_pose import SEND, STALE, GraspPoseRequest
 
@@ -85,6 +86,8 @@ class TaskManagerNode(Node):
             self.get_logger().warn(w)
         self.mission = mission
         self.autostart = self.declare_parameter('autostart', True).value
+        # /task_manager/state 구독자가 이 수만큼 연결된 뒤 출발 (mock 시험용, 기본 0 = 기다리지 않음)
+        self.wait_state_subscribers = self.declare_parameter('wait_state_subscribers', 0).value
 
         run_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
         self.machine = sm.TaskMachine(mission, run_id)
@@ -175,7 +178,8 @@ class TaskManagerNode(Node):
         now = self._now()
         state = self.machine.state
         if state == State.IDLE:
-            if self.autostart and now > 0.0:
+            if can_start(self.autostart, now, self.state_pub.get_subscription_count(),
+                         self.wait_state_subscribers):
                 self._dispatch(sm.Start(now=now))
             return
         if state == State.WAIT_READY:

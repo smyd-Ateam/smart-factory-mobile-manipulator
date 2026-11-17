@@ -139,7 +139,7 @@ PYTHONNOUSERSITE=1 colcon test-result --verbose
 - Near→Pre-grasp 전환 요청 (전체 시나리오): 결과 기록 `pregrasp_request_distance_m`와 `task_manager`의 "not sent" 경고 횟수. 정렬 중 물체 0.25 m인 S16~S20 · S22는 0.25 m에서 한 번(재정렬해도 한 번), 나머지(nav_only, S21 물체 없음, S23 먼 물체)는 없음. 기준 0.35 m는 PR #1 답변 대기 중이라 확정 전
 - 마지막 결과: `~/.ros/mm_task_manager/launch_test/<시나리오>/` (`result.jsonl`, `record.csv`, `goals.csv`, S16~S23은 `align_goals.csv`, `grasp_goals.csv`)
 - JUnit 결과(`build/mm_task_manager/pytest.xml`)에는 launch 시험 파일 전체가 테스트 1개로 나온다. 실패하면 `log/latest_test/mm_task_manager/stdout_stderr.log`에 시나리오별 실패가 나온다
-- `/task_manager/state`의 IDLE은 시작 직후 약 0.1 s만 유지되고 depth 1 `transient_local`이라, 늦게 연결된 구독자는 못 받을 수 있다
+- `/task_manager/state`의 IDLE은 시작 직후 약 0.1 s만 유지되고 depth 1 `transient_local`이라, 늦게 연결된 구독자는 못 받을 수 있다. 새로 뜬 `task_manager`가 발견되기까지 S16~S23에서 2~3 s 걸릴 때가 있어(시작 지연을 늘려도 안 줄어듦) WAIT_READY까지 놓친 적이 있다. 그래서 mock 설정(`config/mock/common.yaml`)은 `wait_state_subscribers: 1`로, `cmd_recorder`가 `/task_manager/state`에 붙은 뒤 출발하게 한다. 그래도 IDLE은 붙은 직후 WAIT_READY가 depth 1 이력을 덮으면 빠질 수 있어서, 단계 순서 비교는 맨 앞 IDLE만 없어도 되게 둔다. 기본값 0이면 기다리지 않는다
 
 ## 실패 코드
 
