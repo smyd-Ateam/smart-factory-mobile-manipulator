@@ -28,7 +28,7 @@
 | 시뮬레이터 | Gazebo Fortress (`ign gazebo`) |
 | Python | 3.10 |
 | 로봇팔 모델 | DOFBOT (확정) — 그리퍼 분리형 모델 (패키지 `dofbot_description`, `feat/grasp`, 2026-11-08 공식 모델로 확정). 회전 관절 5개 + 그리퍼 관절 1개(좌우 집게 mimic). 출처: GitHub DofBot-PickNPlace 프로젝트 (MIT License). 팀원 실물 구현 경험 있음 |
-| 모바일 베이스 모델 | 직접 제작한 차동구동 차체 (확정). 패키지 `mm_description` (`feat/navigation` 브랜치), 차체 40×30×10 cm · 바퀴 반지름 5 cm · 바퀴 간격 35 cm (임시값, 팔 장착 시 조정). TurtleBot3는 Humble에서 Gazebo Classic 전용이라 사용 불가. TurtleBot4는 센서가 많아 무거움: RTF Mac VM 약 10~20%, Windows PC 12.5% (PR #1 댓글 참고) |
+| 모바일 베이스 모델 | 직접 제작한 차동구동 차체 (확정). 패키지 `mm_description` (`feat/navigation` 브랜치), 차체 40×30×10 cm · 바퀴 반지름 5 cm · 바퀴 간격 35 cm (임시값, 팔 장착 시 조정) (PR #4에서 0.38×0.28×0.06m로 변경 제안 중, 아직 머지 전 — 머지되면 이 값도 갱신 필요). TurtleBot3는 Humble에서 Gazebo Classic 전용이라 사용 불가. TurtleBot4는 센서가 많아 무거움: RTF Mac VM 약 10~20%, Windows PC 12.5% (PR #1 댓글 참고) |
 
 > 참고: 이전에 받은 `dofbot_initialposition.urdf`(ㄷ자 자세 버전)는 링크 간 간섭이 생기는 각도 범위가 설정돼 있어 사용하지 않는다.
 
