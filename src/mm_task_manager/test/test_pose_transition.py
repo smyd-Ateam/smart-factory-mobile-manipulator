@@ -7,7 +7,7 @@ from mm_task_manager.pose_transition import (NEAR_TO_PREGRASP_THRESHOLD_M, PRE_G
 
 
 def test_threshold_is_provisional_035():
-    # 확정 전 값 (PR #1 답변 대기). 값이 바뀌면 이 테스트도 같이 고친다
+    # 희선님 확정 값 (PR #1, 2026-11-17, 변경 시 재논의). 값이 바뀌면 이 테스트도 같이 고친다
     assert NEAR_TO_PREGRASP_THRESHOLD_M == 0.35
 
 

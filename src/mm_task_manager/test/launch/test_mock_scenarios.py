@@ -6,7 +6,7 @@ task_manager가 스스로 끝나기를 SCENARIO_TIMEOUT_SEC까지만 기다린�
 mock_nav_server가 받은 이동 목표(CSV)를 기대값과 비교한다.
 S16~S23(정렬 · 파지까지, nav_only false)는 mock Align/Grasp 서버와 mock target_pose를 같이 띄우고
 받은 Align/Grasp 목표(CSV)도 비교한다. 정렬 중 Near→Pre-grasp 전환 요청(결과 기록 ·
-task_manager "not sent" 경고 로그)도 확인한다 (기준 0.35 m는 PR #1 답변 대기, 확정 전).
+task_manager "not sent" 경고 로그)도 확인한다 (기준 0.35 m, 희선님 확정 PR #1 2026-11-17).
 """
 
 import csv

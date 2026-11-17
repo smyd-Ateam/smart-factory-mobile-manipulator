@@ -53,7 +53,7 @@ class Mission:
     standoff_list: List[float] = field(default_factory=lambda: [0.25, 0.22, 0.28])
 
     observe_pose_required: bool = False   # TODO(B, C)
-    # 정렬 중 Near→Pre-grasp 전환 거리 (m, 물체 수평거리). TODO: PR #1 답변 대기 중, 0.35m 확정 전.
+    # 정렬 중 Near→Pre-grasp 전환 거리 (m, 물체 수평거리). 0.35m 희선님 확정(PR #1, 2026-11-17).
     # 값은 pose_transition.NEAR_TO_PREGRASP_THRESHOLD_M 한 곳에서 관리
     pregrasp_switch_distance_m: float = NEAR_TO_PREGRASP_THRESHOLD_M
 

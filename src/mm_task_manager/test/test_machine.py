@@ -588,7 +588,7 @@ def test_object_mode_failure_before_goal_records_no_goal():
     assert rec['nav_goal_mode'] == 'object'
 
 
-# ---- 정렬 중 Near→Pre-grasp 전환 요청 (거리 기준 0.35 m는 PR #1 답변 대기, 확정 전) ----
+# ---- 정렬 중 Near→Pre-grasp 전환 요청 (거리 기준 0.35 m, 희선님 확정 PR #1 2026-11-17) ----
 
 def test_pregrasp_requested_when_target_comes_within_threshold():
     m = make(nav_only=False)

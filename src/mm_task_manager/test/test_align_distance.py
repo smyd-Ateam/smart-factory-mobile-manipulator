@@ -1,6 +1,6 @@
 """노드의 /perception/target_pose → TargetDistance 전달 경로 (task_manager_node._on_target_pose).
 
-전환 기준 0.35 m는 PR #1 답변 대기 중이라 확정 전. 여기서는 미션 값을 그대로 쓰는지만 본다.
+전환 기준 0.35 m는 희선님 확정(PR #1, 2026-11-17). 여기서는 미션 값을 그대로 쓰는지만 본다.
 """
 
 import math

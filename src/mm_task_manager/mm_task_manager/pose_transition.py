@@ -9,8 +9,9 @@ D·B 확인 전이라, 상태머신은 "전환 요청" 명령만 내고 노드�
 
 import math
 
-# TODO: PR #1 답변 대기 중, 0.35m 확정 전.
-# 출처: 희선님(B) 개인 노션의 Near→Pre-grasp 전환 지점. 값이 정해지면 여기 한 곳만 고친다.
+# 희선님(B) 확정(PR #1, 2026-11-17): 0.35m 우선 유지 — 변경 시 재논의 필요.
+# (실제 파지 물체로 standoff를 정한 뒤 다시 볼 수 있음. 원래 출처: 희선님 노션의 Near→Pre-grasp 전환 지점)
+# 값을 바꿀 땐 여기 한 곳만 고친다.
 # (Mission.pregrasp_switch_distance_m 기본값이 이 상수를 쓰고, YAML에서 덮어쓸 수도 있다)
 NEAR_TO_PREGRASP_THRESHOLD_M = 0.35
 

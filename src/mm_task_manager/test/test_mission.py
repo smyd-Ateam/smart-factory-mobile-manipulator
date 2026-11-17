@@ -205,7 +205,7 @@ def test_nav_standoff_margin():
 
 
 def test_pregrasp_switch_distance_defaults_to_provisional_constant():
-    # 기본값은 pose_transition의 상수 한 곳에서 온다 (PR #1 답변 대기, 확정 전)
+    # 기본값은 pose_transition의 상수 한 곳에서 온다 (희선님 확정, PR #1 2026-11-17)
     m, _ = mission_from_dict(base_params())
     assert m.pregrasp_switch_distance_m == NEAR_TO_PREGRASP_THRESHOLD_M
 
