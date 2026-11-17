@@ -195,7 +195,7 @@ map
 | `/joint_states` | `sensor_msgs/msg/JointState` | 시뮬 / ros2_control | B, D | — | |
 | `/servoing/cmd_vel` | `geometry_msgs/msg/Twist` | D | 상태머신 | — | 베이스 미세 정렬용 차체 속도 명령 (팔은 고정) |
 | `/perception/target_class` | `std_msgs/msg/String` | 상태머신(A) | C | — | 이번에 잡을 물체 클래스 이름. QoS `transient_local` (나중에 켜진 노드도 마지막 값 수신) |
-| `/task_manager/state` | `std_msgs/msg/String` | 상태머신(A) | 누구나 (모니터링 · 시험) | — | 현재 단계 이름 (`IDLE`, `WAIT_READY`, `NAVIGATE`, `VERIFY_ARRIVAL`, `ALIGN`, `GRASP`, `CANCELING`, `SUCCEEDED`, `FAILED`). 단계가 바뀔 때 발행, QoS `transient_local`. 구현 완료 (A) |
+| `/task_manager/state` | `std_msgs/msg/String` | 상태머신(A) | 누구나 (모니터링 · 시험) | — | 현재 단계 이름 (`IDLE`, `WAIT_READY`, `NAVIGATE`, `VERIFY_ARRIVAL`, `ALIGN`, `GRASP`, `CANCELING`, `SUCCEEDED`, `FAILED`). 단계가 바뀔 때 발행, QoS `transient_local`. QoS depth 10(11/17, 늦게 붙는 구독자도 과거 상태 이력을 받을 수 있게 늘림). 구현 완료 (A) |
 
 ### 3.1 Nav2 속도 명령 흐름 (Humble `nav2_bringup` 확인)
 
