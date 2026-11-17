@@ -8,10 +8,10 @@ import time
 
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, QoSProfile
 from std_msgs.msg import String
 
 from mm_task_manager.run import run
+from mm_task_manager.state_qos import state_qos
 
 HEADER = 'wall_time,sim_time,topic,vx,wz,state\n'
 
@@ -25,8 +25,7 @@ class CmdRecorder(Node):
         self.f = open(path, 'w', encoding='utf-8')
         self.f.write(HEADER)
         self.create_subscription(Twist, '/cmd_vel', self._on_cmd, 10)
-        latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        self.create_subscription(String, '/task_manager/state', self._on_state, latched)
+        self.create_subscription(String, '/task_manager/state', self._on_state, state_qos())
 
     def _row(self, topic, vx=0.0, wz=0.0, state=''):
         sim = self.get_clock().now().nanoseconds * 1e-9

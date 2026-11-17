@@ -205,14 +205,11 @@ class TestResult(unittest.TestCase):
             (final, code, detail, aborted, cnr))
 
     def test_state_sequence(self, out_dir, scenario):
-        # /task_manager/state: 단계가 바뀔 때만, interfaces.md v0.14 이름으로
-        # IDLE은 depth 1 transient_local이라 recorder가 붙은 직후 WAIT_READY가 이력을 덮으면
-        # 못 받을 수 있다 → 맨 앞 IDLE만 선택. WAIT_READY부터는 빠지면 안 된다
-        # (mock 설정 wait_state_subscribers: 1로 recorder가 붙은 뒤 출발, common.yaml)
+        # /task_manager/state: 단계가 바뀔 때만, interfaces.md v0.14 이름으로, IDLE부터 빠짐없이.
+        # transient_local depth 10(state_qos.py)이라 recorder가 늦게 붙어도 지난 단계를 받는다
         _, states, _ = _load(out_dir)
         got = [s for _, _, s in states]
-        expected = EXPECTED[scenario][5]
-        self.assertIn(got, (expected, expected[1:]))
+        self.assertEqual(got, EXPECTED[scenario][5])
 
     def test_cmd_vel_only_while_navigate(self, out_dir):
         # 5.0: 0이 아닌 /cmd_vel은 NAVIGATE(Nav2)와 ALIGN(정렬) 동안에만 (경계에서 한 주기 여유)

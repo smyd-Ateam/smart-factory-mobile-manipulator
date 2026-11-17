@@ -37,6 +37,7 @@ from mm_task_manager.result_log import append_jsonl
 from mm_task_manager.final_stop import FinalStop
 from mm_task_manager.run import NodeExit, run
 from mm_task_manager.start_gate import can_start
+from mm_task_manager.state_qos import state_qos
 from mm_task_manager.states import TERMINAL_STATES, State, StateReporter
 from mm_task_manager.target_pose import SEND, STALE, GraspPoseRequest
 
@@ -101,8 +102,8 @@ class TaskManagerNode(Node):
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.class_pub = self.create_publisher(String, '/perception/target_class', latched)
-        # 현재 단계 이름 (interfaces.md v0.14 3장): 바뀔 때만 발행, transient_local
-        self.state_pub = self.create_publisher(String, '/task_manager/state', latched)
+        # 현재 단계 이름 (interfaces.md v0.14 3장): 바뀔 때만 발행, transient_local depth 10 (state_qos.py)
+        self.state_pub = self.create_publisher(String, '/task_manager/state', state_qos())
         self.state_reporter = StateReporter()
         self._report_state()
         self.create_subscription(Twist, '/nav2/cmd_vel',
