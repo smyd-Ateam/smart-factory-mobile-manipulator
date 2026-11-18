@@ -228,7 +228,7 @@ behavior_server (복구 동작)                        → (기본) /cmd_vel
 - orientation은 당분간 위치만 채우고 단위 쿼터니언(회전 없음)으로 둔다. B가 물체 방향(yaw)이 필요하면 C에게 요청.
 - 카메라가 팔(`link4`)에 달려 있으므로, `camera_optical_frame` → `base_link` 변환은 이미지 stamp 시점의 TF로 계산한다.
 - C는 `/perception/target_class`로 받은 클래스의 물체만 `target_pose`로 발행한다. 클래스 이름은 `Align`의 `target_class`와 같은 문자열을 쓴다.
-- 발행 주기 (C, 2026-11-09): 최소 5 Hz, 목표 10 Hz. 근거는 C 노트북(WSL, i5-1240P CPU)의 YOLOv8n 추론 시간으로, 640 입력 약 128 ms(약 7.8 Hz), 320 입력 약 73 ms(약 13.6 Hz). Gazebo와 CPU를 같이 쓰면 더 느려질 수 있어서 카메라 연동 후 다시 측정한다.
+- 발행 주기 (C, 2026-11-09): 최소 5 Hz, 목표 10 Hz. 근거는 C 노트북(WSL, i5-1240P CPU)의 YOLOv8n 추론 시간으로, 640 입력 약 128 ms(약 7.8 Hz), 320 입력 약 73 ms(약 13.6 Hz). Gazebo와 CPU를 같이 쓰면 더 느려질 수 있어서 카메라 연동 후 다시 측정한다. `/perception/target_pose` 수신 측(A)은 `frame_id`가 `'base_link'`와 정확히 일치하지 않거나, x/y/z에 NaN/inf가 있거나, x≤0이면 해당 메시지를 무시한다(구현: f523b1f, 원준님 PR #1 제안 기반).
 - `header.stamp`는 처리 시각이 아니라 이미지를 찍은 시각이다. 물체가 안 보이면 발행하지 않으므로, 받는 쪽은 stamp 기준으로 1 s 넘게 새 값이 없으면 미검출로 처리한다 (C).
 
 ---
