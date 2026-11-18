@@ -39,7 +39,7 @@ from mm_task_manager.run import NodeExit, run
 from mm_task_manager.start_gate import can_start
 from mm_task_manager.state_qos import state_qos
 from mm_task_manager.states import TERMINAL_STATES, State, StateReporter
-from mm_task_manager.target_pose import SEND, STALE, GraspPoseRequest
+from mm_task_manager.target_pose import SEND, STALE, GraspPoseRequest, is_valid_target_pose
 
 LIFECYCLE_SERVICES = ('/lifecycle_manager_localization/is_active',
                       '/lifecycle_manager_navigation/is_active')
@@ -312,11 +312,18 @@ class TaskManagerNode(Node):
                         lambda t: _rejected(sm.AlignResult, self._now(), t))
 
     def _on_target_pose(self, msg):
+        p = msg.pose.position
+        frame_id = msg.header.frame_id
+        if not is_valid_target_pose(frame_id, p.x, p.y, p.z):
+            # 안전장치(C 제안): Grasp 목표 후보에도, 전환 거리 판단에도 안 씀
+            self.get_logger().warn(
+                f'ignored target_pose: frame {frame_id!r} ({p.x}, {p.y}, {p.z})',
+                throttle_duration_sec=5.0)
+            return
         self.latest_target_pose = msg
         if self.machine.state == State.GRASP:
             self._check_grasp_request(self._now())
-        p = msg.pose.position
-        ev = target_distance_event(self.machine.state, p.x, p.y, self._now())
+        ev = target_distance_event(self.machine.state, frame_id, p.x, p.y, p.z, self._now())
         if ev is not None:
             self._dispatch(ev)
 

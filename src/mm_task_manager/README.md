@@ -90,6 +90,7 @@ mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF
 - 정렬 · 파지 (`nav_only: false`): 도착 확인 뒤 `Align`(`standoff_list`의 시도별 값, `timeout_sec` = `align_timeout_sec`) → 성공하면 `Grasp`. `IK_FAILED`면 `max_realign`까지 `standoff_m`을 바꿔 다시 정렬한다 (interfaces.md 5.2)
 - 정렬 결과를 `align_timeout_sec` + `align_margin_sec` 안에 못 받으면 취소하고 `ALIGN_TIMEOUT` (4.1). 파지는 `grasp_timeout_sec`(임시 60 s)
 - Grasp 목표의 `target_pose`: 정렬이 끝난 직후 바로 보내지 않고, 정렬 뒤 찍힌(stamp ≥ 정렬 완료 시각) 값 중 stamp 기준 `target_pose_max_age_sec`(1.0 s) 이내 값이 오면 그 값으로 보낸다. 1.0 s 안에 안 오면 `OBJECT_NOT_FOUND` / `target_pose_stale` (interfaces.md 3.3 미검출 규칙, `target_pose.py`). 기다리는 방식은 B 확인 전 구현 메모
+- `/perception/target_pose` 안전장치 (C 제안, PR #1 댓글 2026-11-18): `frame_id`가 `base_link`가 아니거나, x · y · z에 NaN · inf가 있거나, x ≤ 0(차체 뒤쪽)인 메시지는 받자마자 무시한다. Grasp 목표 후보에도, Near→Pre-grasp 전환 거리 판단에도 쓰지 않고 경고 로그만 남긴다 (5 s에 한 번, `target_pose.is_valid_target_pose`)
 - 정렬 · 파지 서버가 목표를 거부하면 `UNKNOWN` / `rejected`
 
 - 취소 요청이 거부(REJECTED)되면 취소 완료로 보지 않고 `cancel_timeout_sec`까지 기다린다 (목표가 계속 돌 수 있으므로).
@@ -112,7 +113,7 @@ mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF
 | `mm_task_manager/mission.py` | 미션 파라미터 읽기 · 검증 |
 | `mm_task_manager/result_log.py` | 결과 기록 (JSON 한 줄씩) |
 | `mm_task_manager/codes.py` | 실패 코드, 세부 원인 |
-| `mm_task_manager/target_pose.py` | Grasp에 넘길 `target_pose` 선택 (정렬 뒤 찍힌 1.0 s 이내 값, 없으면 미검출) |
+| `mm_task_manager/target_pose.py` | Grasp에 넘길 `target_pose` 선택 (정렬 뒤 찍힌 1.0 s 이내 값, 없으면 미검출), 받는 쪽 안전장치 `is_valid_target_pose` |
 | `config/mission_test_room.yaml` | 미션 파라미터 (임시값, TODO 표시) |
 
 ## 테스트
