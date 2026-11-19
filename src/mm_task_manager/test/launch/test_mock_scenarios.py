@@ -1,10 +1,10 @@
-"""mock 시나리오 S1~S22 자동 시험 (launch_testing).
+"""mock 시나리오 S1~S24 자동 시험 (launch_testing).
 
 colcon test로 실행한다 (README 참고). 시나리오마다 mock 노드와 task_manager를 띄우고,
 task_manager가 스스로 끝나기를 SCENARIO_TIMEOUT_SEC까지만 기다린다 (멈춘 시나리오가 전체를 막지 않게).
 끝난 뒤 결과 기록(JSONL), /cmd_vel · /task_manager/state 기록(CSV),
 mock_nav_server가 받은 이동 목표(CSV)를 기대값과 비교한다.
-S16~S23(정렬 · 파지까지, nav_only false)는 mock Align/Grasp 서버와 mock target_pose를 같이 띄우고
+S16~S24(정렬 · 파지까지, nav_only false)는 mock Align/Grasp 서버와 mock target_pose를 같이 띄우고
 받은 Align/Grasp 목표(CSV)도 비교한다. 정렬 중 Near→Pre-grasp 전환 요청(결과 기록 ·
 task_manager "not sent" 경고 로그)도 확인한다 (기준 0.35 m, 희선님 확정 PR #1 2026-11-17).
 """
@@ -76,6 +76,8 @@ EXPECTED = {
                            GRASP_FAIL),
     's22_grasp_miss': ('FAILED', 'GRASP_MISS', '', False, False, GRASP_FAIL),
     's23_target_far': ('SUCCEEDED', '', '', False, False, FULL_OK),
+    's24_target_pose_filtered': ('FAILED', 'OBJECT_NOT_FOUND', 'target_pose_stale', False, False,
+                                 GRASP_FAIL),
 }
 
 # 정렬 · 파지 시나리오: (Align 호출마다 standoff_m, Grasp 호출 수, 실패 단계, 재정렬 횟수)
@@ -89,6 +91,7 @@ FULL = {
     's21_no_target_pose': ([0.25], 0, 'GRASP', 0),
     's22_grasp_miss': ([0.25], 1, 'GRASP', 0),
     's23_target_far': ([0.25], 1, '', 0),
+    's24_target_pose_filtered': ([0.25], 0, 'GRASP', 0),
 }
 
 # mock_target_pose가 발행하는 물체 x (base_link). full.yaml 0.25, S23만 0.40 (전환 기준보다 멂)
@@ -100,8 +103,12 @@ TARGET_X['s23_target_far'] = 0.40
 # (재정렬이 있어도 한 실행에 한 번). S21은 target_pose가 없어서 요청 없음
 PREGRASP_DISTANCE = {name: None for name in EXPECTED}
 PREGRASP_DISTANCE.update({name: 0.25 for name in FULL
-                          if name not in ('s21_no_target_pose', 's23_target_far')})
+                          if name not in ('s21_no_target_pose', 's23_target_far',
+                                          's24_target_pose_filtered')})
 NOT_SENT_LOG = 'not sent: request interface not decided yet'
+# 안전장치 필터(frame_id · NaN/inf · x <= 0)로 거른 target_pose: task_manager 경고 (5 s에 한 번)
+IGNORED_LOG = 'ignored target_pose:'
+FILTERED = ('s24_target_pose_filtered',)
 SERVO_VX = 0.03   # mock_align_server가 정렬 중 /servoing/cmd_vel로 보내는 값 (full.yaml)
 
 # 기본 미션 파일 (config/ 기준). 없으면 mission_test_room.yaml (object 모드, 물체 (1.40, 0))
@@ -310,6 +317,14 @@ class TestResult(unittest.TestCase):
             self.assertAlmostEqual(got, expected, delta=1e-6)
         text = ''.join(io.text.decode(errors='replace') for io in proc_output[task_manager])
         self.assertEqual(text.count(NOT_SENT_LOG), 0 if expected is None else 1)
+
+    def test_target_pose_filter(self, proc_output, task_manager, scenario):
+        # S24: 메시지가 노드에 실제로 와서 거른 것 (발행이 없는 S21과 구분). 그 밖의 시나리오는 거른 것 없음
+        text = ''.join(io.text.decode(errors='replace') for io in proc_output[task_manager])
+        if scenario in FILTERED:
+            self.assertGreaterEqual(text.count(IGNORED_LOG), 1)
+        else:
+            self.assertEqual(text.count(IGNORED_LOG), 0)
 
     def test_nav_goal_mode(self, out_dir, scenario):
         record, _, _ = _load(out_dir)

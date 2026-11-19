@@ -1,0 +1,6 @@
+# S24 target_pose가 차체 뒤쪽(x = -0.1): 노드의 안전장치 필터(x <= 0 무시)가 받자마자 거른다
+# → Near→Pre-grasp 전환 요청 없음, Grasp 목표 안 보냄, 정렬 뒤 1.0 s에 OBJECT_NOT_FOUND / target_pose_stale.
+# S21(발행 자체가 없음)과 결과는 같지만, 여기서는 메시지가 실제로 와서 노드가 거른다 ("ignored target_pose" 경고)
+mock_target_pose:
+  ros__parameters:
+    x: -0.1
