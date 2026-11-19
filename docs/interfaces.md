@@ -542,4 +542,7 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-15 | v0.18 | 5.5절 차체 앞면 수치 0.20m → 0.215m 갱신 (PR #4 반영, 라이다 포함) | A |
 | 2026-11-16 | v0.19 | 5.6 관측 · 파지 자세 4종(far, near, pre-grasp, grasp) 관절 값 · 카메라 TF · 물체 거리 추가, 5.7 카메라 내부 파라미터 추가, 6장 체크리스트 near 선정 완료 반영 (B 측정, PR #3 댓글 · feat/grasp observations/, 2026-11-15) | A |
 | 2026-11-16 | v0.20 | 5.6 관측 자세 전환 순서 추가 (Far → Near 약 0.60 m → Pre-grasp 약 0.35 m → Grasp, B 제안, 희선님 개인 노션, 2026-11-15). 정렬 중 Near→Pre-grasp 전환 요청 방식은 D 확인 중 | A |
+| 2026-11-17 | v0.20 | 3장 `/task_manager/state` QoS depth 10 비고 추가 (늦게 붙는 구독자도 과거 상태 이력을 받을 수 있게 늘림. 버전 유지) | A |
+| 2026-11-18 | v0.20 | 3.3 `/perception/target_pose` 수신 측(A) 안전장치 필터 비고 추가: `frame_id`가 `base_link`가 아니거나, x/y/z에 NaN/inf가 있거나, x≤0이면 무시 (구현 f523b1f, C 제안 PR #1. 버전 유지) | A |
 | 2026-11-19 | v0.21 | 5.6 Near→Pre-grasp 전환 방식 확정: Align 2단계 호출(near 1차 standoff 0.35 m → 정지 상태에서 observe_pose로 pre-grasp 전환 → 2차 최종 standoff), 5.2 재정렬과 별개, PR #5 확정 전까지 코드 미반영. 깊이 이미지 32FC1(m) · NaN/inf 제외 D 재확인 (D 답변, 2026-11-19) | A |
+| 2026-11-19 | v0.21 | 3장 `/task_manager/state` QoS depth 10→17 비고 수정 (재정렬 최대 + 취소 경로 최대 12개 + 여유 5, 구독 측도 17 이상 권장. 버전 유지) | A |
