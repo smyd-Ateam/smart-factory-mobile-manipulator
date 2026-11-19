@@ -6,6 +6,7 @@ mode:
   reject              목표 거부
   hang                끝나지 않음 (취소는 받아들임)
   hang_ignore_cancel  끝나지 않고, 취소 요청에 응답도 하지 않음
+  hang_reject_cancel  끝나지 않고, 취소 요청을 거부함 (REJECT 응답, 목표는 계속 진행)
 실행 중에는 /nav2/cmd_vel로 linear.x = cmd_vx를 10 Hz 발행 (cmd_stop_after_sec 뒤 중단, -1이면 계속).
 끝난 뒤에도 cmd_after_finish_sec 동안 계속 발행 (S11).
 받은 목표 (x, y, yaw)는 로그와 goal_log_path(CSV, 비우면 안 씀)에 남긴다.
@@ -84,6 +85,9 @@ class MockNavServer(Node):
         self.get_logger().info('cancel requested')
         if self.mode == 'hang_ignore_cancel':
             await self.never                     # 응답을 보내지 않음
+        if self.mode == 'hang_reject_cancel':
+            self.get_logger().info('cancel rejected')
+            return CancelResponse.REJECT
         return CancelResponse.ACCEPT
 
     def _execute(self, goal_handle):

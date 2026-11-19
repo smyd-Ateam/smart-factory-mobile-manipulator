@@ -1,4 +1,4 @@
-"""mock 시나리오 S1~S24 자동 시험 (launch_testing).
+"""mock 시나리오 S1~S25 자동 시험 (launch_testing).
 
 colcon test로 실행한다 (README 참고). 시나리오마다 mock 노드와 task_manager를 띄우고,
 task_manager가 스스로 끝나기를 SCENARIO_TIMEOUT_SEC까지만 기다린다 (멈춘 시나리오가 전체를 막지 않게).
@@ -78,6 +78,9 @@ EXPECTED = {
     's23_target_far': ('SUCCEEDED', '', '', False, False, FULL_OK),
     's24_target_pose_filtered': ('FAILED', 'OBJECT_NOT_FOUND', 'target_pose_stale', False, False,
                                  GRASP_FAIL),
+    # 취소 거부: 거부를 완료로 보지 않고 cancel_timeout_sec까지 CANCELING → 중단 (README 실행 규칙)
+    # cancel_no_response는 거부 응답이 와도 지금 동작대로 true (시간 제한으로 끝난 취소)
+    's25_cancel_rejected': ('FAILED', 'NAV_FAILED', 'timeout', True, True, TIMEOUT_FAIL),
 }
 
 # 정렬 · 파지 시나리오: (Align 호출마다 standoff_m, Grasp 호출 수, 실패 단계, 재정렬 횟수)
@@ -109,6 +112,11 @@ NOT_SENT_LOG = 'not sent: request interface not decided yet'
 # 안전장치 필터(frame_id · NaN/inf · x <= 0)로 거른 target_pose: task_manager 경고 (5 s에 한 번)
 IGNORED_LOG = 'ignored target_pose:'
 FILTERED = ('s24_target_pose_filtered',)
+# 취소 요청이 거부됐을 때 task_manager 경고. rclpy(Humble) 서버는 거부해도 return_code를
+# ERROR_NONE(0)으로 두고 goals_canceling에서만 빼므로, return_code 값은 보지 않는다
+CANCEL_REJECTED_LOG = 'cancel of goal #1 not accepted'
+CANCEL_REJECTED = ('s25_cancel_rejected',)
+CANCEL_TIMEOUT_SEC = 3.0       # common.yaml cancel_timeout_sec
 SERVO_VX = 0.03   # mock_align_server가 정렬 중 /servoing/cmd_vel로 보내는 값 (full.yaml)
 
 # 기본 미션 파일 (config/ 기준). 없으면 mission_test_room.yaml (object 모드, 물체 (1.40, 0))
@@ -325,6 +333,20 @@ class TestResult(unittest.TestCase):
             self.assertGreaterEqual(text.count(IGNORED_LOG), 1)
         else:
             self.assertEqual(text.count(IGNORED_LOG), 0)
+
+    def test_cancel_rejected(self, proc_output, task_manager, out_dir, scenario):
+        # S25: 취소 응답(거부)이 실제로 왔고, 거부를 취소 완료로 보지 않고 cancel_timeout_sec 동안
+        # CANCELING에 머문 뒤 중단. 그 밖의 시나리오에는 거부 경고가 없어야 함
+        text = ''.join(io.text.decode(errors='replace') for io in proc_output[task_manager])
+        if scenario not in CANCEL_REJECTED:
+            self.assertEqual(text.count('not accepted'), 0)
+            return
+        self.assertEqual(text.count(CANCEL_REJECTED_LOG), 1)
+        self.assertEqual(text.count('canceling goal #1'), 1)    # 취소는 한 번만 보냄
+        record, _, _ = _load(out_dir)
+        canceling = record['stage_durations']['CANCELING']
+        self.assertGreaterEqual(canceling, CANCEL_TIMEOUT_SEC)
+        self.assertLess(canceling, CANCEL_TIMEOUT_SEC + 0.5)
 
     def test_nav_goal_mode(self, out_dir, scenario):
         record, _, _ = _load(out_dir)

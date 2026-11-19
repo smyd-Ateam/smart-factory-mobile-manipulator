@@ -53,6 +53,8 @@ mock 결과: `<out_dir>/<scenario>.jsonl` (상태머신 결과), `<out_dir>/<sce
 | `s21_no_target_pose` | 정렬 뒤 `target_pose` 안 옴 | 1.0 s 뒤 `OBJECT_NOT_FOUND` / `target_pose_stale`, Grasp 안 보냄 |
 | `s22_grasp_miss` | `GRASP_MISS` | 재정렬 없이 FAILED (재정렬은 `IK_FAILED`만) |
 | `s23_target_far` | 정렬 중 물체 0.40 m (Near→Pre-grasp 전환 기준보다 멂) | 전환 요청 없음, SUCCEEDED |
+| `s24_target_pose_filtered` | 정렬 뒤 `target_pose`가 차체 뒤쪽(x = -0.1)으로 옴 | 안전장치 필터가 거름(`ignored target_pose` 경고) → 1.0 s 뒤 `OBJECT_NOT_FOUND` / `target_pose_stale`, Grasp 안 보냄 |
+| `s25_cancel_rejected` | Nav 끝나지 않음, 취소 요청 거부 (`hang_reject_cancel`) | `cancel_timeout_sec`(3.0 s) 동안 CANCELING → `NAV_FAILED` / `timeout`, `aborted: true`, `cancel ... not accepted` 경고 1번, 이후 `/cmd_vel` 0 |
 
 S1~S11은 기본 미션(object 모드, 물체 (1.40, 0))으로 돌고, mock 차체가 (1.0, 0) 근처라 목표는 (1.0, 0, 0)이다.
 
@@ -93,7 +95,7 @@ mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF
 - `/perception/target_pose` 안전장치 (C 제안, PR #1 댓글 2026-11-18): `frame_id`가 `base_link`가 아니거나, x · y · z에 NaN · inf가 있거나, x ≤ 0(차체 뒤쪽)인 메시지는 받자마자 무시한다. Grasp 목표 후보에도, Near→Pre-grasp 전환 거리 판단에도 쓰지 않고 경고 로그만 남긴다 (5 s에 한 번, `target_pose.is_valid_target_pose`)
 - 정렬 · 파지 서버가 목표를 거부하면 `UNKNOWN` / `rejected`
 
-- 취소 요청이 거부(REJECTED)되면 취소 완료로 보지 않고 `cancel_timeout_sec`까지 기다린다 (목표가 계속 돌 수 있으므로).
+- 취소 요청이 거부(REJECTED)되면 취소 완료로 보지 않고 `cancel_timeout_sec`까지 기다린다 (목표가 계속 돌 수 있으므로). rclpy(Humble) 서버는 거부해도 `return_code`를 0(`ERROR_NONE`)으로 두고 `goals_canceling`에서만 빼므로, `return_code`가 0이어도 `goals_canceling`이 비어 있으면 거부로 본다 (S25).
 - 시작 확인에서 자기 말고 `/cmd_vel` 발행자가 있으면 `ready_timeout_sec`까지 기다린 뒤 `NAV_NOT_READY` / `cmd_vel_conflict`로 끝낸다. 이전 실행 노드가 남아 0을 섞어 보내면 Nav2가 `Failed to make progress`로 실패하기 때문 (2026-11-09 확인). discovery를 기다리려고 시작 후 `ready_min_wait_sec`(1 s) 동안은 준비 판정을 하지 않는다.
 - 끝나면(SUCCEEDED, FAILED, 실행 중단 모두) `/cmd_vel` 0을 `final_zero_sec`(1 s, wall time) 동안 보낸 뒤 노드가 스스로 종료한다. DiffDrive가 마지막 명령(0)을 유지하므로 차체는 서 있다 (실제 시뮬에서 종료 후 5 s odom 속도 0 확인).
 - 종료(Ctrl-C) 시 `/cmd_vel` 0을 한 번 보낸다.
@@ -127,7 +129,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q test --ignore=test/launch
 
 `~/.local`에 pytest를 따로 설치한 환경에서는 ROS의 `launch_testing` 플러그인과 충돌하므로 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`을 붙인다 (`visual_servoing` README 참고). `test/launch`는 launch_testing 플러그인이 있어야 하므로 제외한다.
 
-mock 시나리오 S1~S23 자동 시험 (launch_testing, 약 6.5분):
+mock 시나리오 S1~S25 자동 시험 (launch_testing, 약 7.5분):
 
 ```bash
 PYTHONNOUSERSITE=1 colcon test --packages-select mm_task_manager
