@@ -4,6 +4,8 @@
 output()이 None이면 노드가 속도 0을 발행한다.
 """
 
+import math
+
 from mm_task_manager.states import State
 
 NAV = 'nav'        # /nav2/cmd_vel
@@ -12,6 +14,18 @@ ZERO = 'zero'      # 속도 0
 
 _INPUTS = (NAV, SERVO)
 _SOURCES = (NAV, SERVO, ZERO)
+
+
+def _check_timeout(value):
+    """입력 끊김 판정 시간(s). 0 이하 · NaN · inf · 숫자 아닌 값(문자열, bool 등)은 ValueError.
+
+    NaN이면 끊김 비교(now - stamp > NaN)가 항상 False가 되어 마지막 명령이 계속 나가므로 막는다.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f'input_timeout_sec must be a number (got {value!r})')
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f'input_timeout_sec must be finite and > 0 (got {value!r})')
+    return float(value)
 
 
 def source_for(state):
@@ -25,7 +39,7 @@ def source_for(state):
 class CmdSelector:
 
     def __init__(self, input_timeout_sec):
-        self._timeout = input_timeout_sec
+        self._timeout = _check_timeout(input_timeout_sec)
         self._latest = {}            # 입력 이름 → (명령, 수신 시각)
         self._selected = ZERO
         self._switched_at = None
