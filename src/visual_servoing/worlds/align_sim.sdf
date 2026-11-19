@@ -1,0 +1,138 @@
+<?xml version="1.0"?>
+<!--
+  Visual servoing Gazebo 시험 월드 (D). Gazebo Fortress, 화면 없이(-s) ogre2로 실행한다.
+
+  - mm_test_base: 정렬 시험용 단순 차체. base_link = 모델 원점 (바닥에서 0.05 m, mm_description과 같음)
+      바퀴 물리 없이 VelocityControl로 cmd_vel을 그대로 속도로 쓴다 (미끄러짐 없음).
+      카메라: RGB-D + boundingbox 카메라를 같은 자리에 둔다.
+      장착 위치는 임시값 (mock_model.CameraMount와 같음, B의 near 자세가 정해지면 교체).
+  - pin: 정렬 대상. feat/yolo의 perception/synthetic_data/models/pin과 같은 모양·label(2)
+-->
+<sdf version="1.8">
+  <world name="align_sim">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="ignition-gazebo-physics-system" name="ignition::gazebo::systems::Physics"/>
+    <plugin filename="ignition-gazebo-user-commands-system" name="ignition::gazebo::systems::UserCommands"/>
+    <plugin filename="ignition-gazebo-scene-broadcaster-system" name="ignition::gazebo::systems::SceneBroadcaster"/>
+    <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors">
+      <!-- boundingbox 카메라는 ogre2 전용 -->
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <scene>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+    </scene>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>50 50</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>50 50</size></plane></geometry>
+          <material>
+            <ambient>0.6 0.6 0.55 1</ambient>
+            <diffuse>0.6 0.6 0.55 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 정렬 대상: feat/yolo pin과 같은 모양 (지름 2 cm, 길이 5 cm, 원점 = 바닥 중심) -->
+    <model name="pin_target">
+      <static>true</static>
+      <pose>0.60 0.08 0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <pose>0 0 0.025 0 0 0</pose>
+          <geometry><cylinder><radius>0.01</radius><length>0.05</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <pose>0 0 0.025 0 0 0</pose>
+          <geometry><cylinder><radius>0.01</radius><length>0.05</length></cylinder></geometry>
+          <material>
+            <ambient>0.80 0.80 0.82 1</ambient>
+            <diffuse>0.80 0.80 0.82 1</diffuse>
+            <specular>0.3 0.3 0.3 1</specular>
+          </material>
+        </visual>
+      </link>
+      <plugin filename="ignition-gazebo-label-system" name="ignition::gazebo::systems::Label">
+        <label>2</label>
+      </plugin>
+    </model>
+
+    <model name="mm_test_base">
+      <pose>0 0 0.05 0 0 0.25</pose>
+      <link name="base_link">
+        <!-- 중력·충돌 없이 VelocityControl 속도만 따라 움직인다 -->
+        <gravity>false</gravity>
+        <inertial>
+          <mass>5.0</mass>
+          <inertia><ixx>0.05</ixx><ixy>0</ixy><ixz>0</ixz><iyy>0.07</iyy><iyz>0</iyz><izz>0.1</izz></inertia>
+        </inertial>
+        <visual name="chassis">
+          <pose>0 0 0.0 0 0 0</pose>
+          <geometry><box><size>0.38 0.28 0.06</size></box></geometry>
+          <material>
+            <ambient>0.9 0.5 0.1 1</ambient>
+            <diffuse>0.9 0.5 0.1 1</diffuse>
+          </material>
+        </visual>
+
+        <sensor name="rgbd" type="rgbd_camera">
+          <pose>0.10 0 0.25 0 0.75 0</pose>
+          <topic>sim_camera</topic>
+          <ignition_frame_id>camera_optical_frame</ignition_frame_id>
+          <always_on>true</always_on>
+          <update_rate>10</update_rate>
+          <camera>
+            <horizontal_fov>1.0472</horizontal_fov>
+            <image><width>640</width><height>480</height></image>
+            <clip><near>0.05</near><far>10</far></clip>
+          </camera>
+        </sensor>
+        <sensor name="bbox" type="boundingbox_camera">
+          <pose>0.10 0 0.25 0 0.75 0</pose>
+          <topic>sim_boxes</topic>
+          <ignition_frame_id>camera_optical_frame</ignition_frame_id>
+          <always_on>true</always_on>
+          <update_rate>10</update_rate>
+          <camera>
+            <box_type>2d</box_type>
+            <horizontal_fov>1.0472</horizontal_fov>
+            <image><width>640</width><height>480</height></image>
+            <clip><near>0.05</near><far>10</far></clip>
+          </camera>
+        </sensor>
+      </link>
+
+      <plugin filename="ignition-gazebo-velocity-control-system"
+              name="ignition::gazebo::systems::VelocityControl">
+        <topic>/model/mm_test_base/cmd_vel</topic>
+      </plugin>
+      <plugin filename="ignition-gazebo-pose-publisher-system"
+              name="ignition::gazebo::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <publish_nested_model_pose>true</publish_nested_model_pose>
+        <use_pose_vector_msg>true</use_pose_vector_msg>
+        <update_frequency>50</update_frequency>
+      </plugin>
+    </model>
+  </world>
+</sdf>

@@ -13,6 +13,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
         ('share/' + package_name + '/rviz', glob('rviz/*.rviz')),
+        ('share/' + package_name + '/worlds', glob('worlds/*.sdf')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -25,6 +26,7 @@ setup(
             'align_node = visual_servoing.align_node:main',
             'mock_scene_node = visual_servoing.mock_scene_node:main',
             'mock_trials = visual_servoing.mock_trials:main',
+            'sim_scene_node = visual_servoing.sim_scene_node:main',
         ],
     },
 )

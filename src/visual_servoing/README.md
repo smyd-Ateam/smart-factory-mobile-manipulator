@@ -6,26 +6,16 @@ Align 액션 서버 `/servoing/align` (`project_interfaces/action/Align`)를 제
 
 ## 빌드
 
-`project_interfaces` 패키지가 필요하다 (PR #2, `feat/project-interfaces`).
-develop에 합쳐지기 전까지는 레포 밖 작업 공간에 따로 빌드해서 쓴다.
+같은 레포의 `project_interfaces` 패키지(Align 액션)가 필요하다. 둘을 같이 빌드한다.
 
 ```bash
-# 한 번만: project_interfaces를 ~/vs_deps_ws 에 빌드
-mkdir -p ~/vs_deps_ws
-cd ~/smart-factory-mobile-manipulator
-git fetch origin
-git archive origin/feat/project-interfaces src/project_interfaces | tar -x -C ~/vs_deps_ws
-cd ~/vs_deps_ws && colcon build
-
-# visual_servoing 빌드 (레포 폴더에서)
 cd ~/smart-factory-mobile-manipulator
 source /opt/ros/humble/setup.bash
-source ~/vs_deps_ws/install/setup.bash
-colcon build --packages-select visual_servoing
+colcon build --packages-select project_interfaces visual_servoing
 source install/setup.bash
 ```
 
-PR #2가 develop에 합쳐지면 develop을 이 브랜치에 받고 `~/vs_deps_ws`는 지워도 된다.
+`~/.local`에 setuptools를 따로 설치한 WSL 환경에서 `canonicalize_version()` 오류가 나면 `PYTHONNOUSERSITE=1 colcon build ...`로 빌드한다.
 
 ## 모의 입력으로 실행
 
@@ -55,6 +45,26 @@ ros2 run visual_servoing mock_trials --ros-args -p trials:=20 -p csv:=/tmp/trial
 RViz가 같이 켜진다 (위에서 본 화면). 주황 상자 = 차체, 파란 물체 = 목표 물체, 초록 원 = 목표 거리(`standoff_m`).
 차체 중심(`base_link`)이 초록 원 위에 오고 물체를 정면으로 보면 정렬 완료다. RViz 없이 실행하려면 `rviz:=false`.
 
+## Gazebo 카메라로 실행 (시각 피드백 정렬 테스트)
+
+Gazebo Fortress가 렌더링한 깊이 영상과 boundingbox 카메라 정답 박스로 정렬한다 (설계 문서 5.2).
+Gazebo는 화면 없이(`-s`, ogre2) 뜬다. 필요한 것: `ros-humble-ros-gz`.
+
+```bash
+ros2 launch visual_servoing sim_align.launch.py
+```
+
+반복 시험 (다른 터미널):
+
+```bash
+ros2 run visual_servoing mock_trials --ros-args -p scene:=sim -p use_sim_time:=true   -p settle_sec:=2.0 -p wall_factor:=5.0 -p trials:=20 -p csv:=/tmp/sim_trials.csv
+```
+
+- 월드 `worlds/align_sim.sdf`: 단순 차체(`mm_test_base`, 바퀴 물리 없이 cmd_vel을 그대로 따름) + 카메라 + `pin` 1개 (feat/yolo 모델과 같은 모양, label 2).
+- 카메라 위치·각도는 임시값으로 `mock_model.CameraMount`와 같다 (`test_sim.py`가 확인). B의 near 자세가 정해지면 바꾼다.
+- YOLO 검출 노드(C)로 시험할 때는 `gt_detections:=false`로 정답 박스를 끄고, 검출 노드가 `/camera/image_raw`를 받아 `/perception/detections`를 내게 한다.
+- 정렬 시간은 시뮬레이션 시간이다. WSL 소프트웨어 렌더링에서 RTF는 약 0.65.
+
 ## 단위 테스트
 
 ```bash
@@ -83,9 +93,12 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q test
 |---|---|---|
 | `align_node` | `/perception/detections`, `/camera/depth/image_raw`, `/camera/camera_info`, TF, 액션 `/servoing/align` | `/servoing/cmd_vel` |
 | `mock_scene_node` (시험용) | `/servoing/cmd_vel` | `/perception/detections`, `/camera/depth/image_raw`, `/camera/camera_info`, TF, `/servoing/mock_object_in_base`, 서비스 `/servoing/mock_reset` |
-| `mock_trials` (시험용) | 위 두 노드 | 시험 결과 요약, CSV |
+| `mock_trials` (시험용) | 위 노드들 (`scene:=mock` 또는 `sim`) | 시험 결과 요약, CSV |
+| `sim_scene_node` (Gazebo 시험용) | `/servoing/sim_boxes`, `/servoing/sim_base_pose` | `/perception/detections` (정답 박스), `/servoing/sim_object_in_base`, 서비스 `/servoing/sim_reset` |
 
-`align_node` 파라미터: 제어 `k_v`, `k_w`, `max_v`, `max_w`, `bearing_gate`, `tol_range`, `tol_bearing`, `stop_ratio` / 판정 `lost_timeout`, `max_age`, `settle`, `required_frames` / 기타 `score_min`, `control_rate`, `feedback_rate`.
+`align_node` 파라미터: 제어 `k_v`, `k_w`, `max_v`, `max_w`, `bearing_gate`, `tol_range`, `tol_bearing`, `stop_ratio` / 판정 `lost_timeout`, `max_age`, `settle`, `required_frames` / 기타 `score_min`, `control_rate`, `feedback_rate`, `center_offsets`.
+
+`center_offsets`: 깊이는 물체 앞면까지 거리라서 물체 중심까지 더할 클래스별 반폭 (`"클래스:미터"` 목록, 기본 block 0.0125, pin 0.010, hex_nut 0.015, bolt 0.006). 모의 입력(`mock_align.launch.py`)은 깊이가 중심까지라 0으로 둔다.
 
 ## 파일
 
@@ -96,5 +109,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q test
 | `visual_servoing/session.py` | 목표 하나의 진행 판단: 정지 후 완료 판정, 시간 초과, 물체 놓침 |
 | `visual_servoing/align_node.py` | Align 액션 서버 |
 | `visual_servoing/mock_model.py`, `mock_scene_node.py` | 모의 차체·카메라 |
-| `visual_servoing/mock_trials.py` | 모의 입력 반복 시험 |
+| `visual_servoing/mock_trials.py` | 반복 시험 (모의 입력, Gazebo) |
+| `visual_servoing/sim_model.py`, `sim_scene_node.py` | Gazebo 시험 보조 (label → 클래스, 차체 위치 리셋) |
+| `launch/sim_align.launch.py`, `worlds/align_sim.sdf` | Gazebo 시험 |
 | `test/` | 단위 테스트, 모의 폐루프 테스트 |

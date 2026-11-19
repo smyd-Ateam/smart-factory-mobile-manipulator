@@ -27,12 +27,15 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from vision_msgs.msg import Detection2DArray
 
 from visual_servoing.control import ControlParams
-from visual_servoing.geometry import decode_depth, depth_at, pixel_to_camera, transform_point
+from visual_servoing.geometry import (decode_depth, depth_at, parse_center_offsets,
+                                      pixel_to_camera, surface_to_center, transform_point)
 from visual_servoing.session import RUNNING, SUCCEEDED, AlignSession, SessionParams
 
 
 def stamp_ns(stamp):
     return stamp.sec * 1_000_000_000 + stamp.nanosec
+
+DEFAULT_CENTER_OFFSETS = ['block:0.0125', 'pin:0.010', 'hex_nut:0.015', 'bolt:0.006']
 
 
 class AlignNode(Node):
@@ -46,11 +49,14 @@ class AlignNode(Node):
         self.declare_parameter('depth_sync_tolerance', 0.02)   # s
         self.declare_parameter('control_rate', 20.0)           # Hz
         self.declare_parameter('feedback_rate', 5.0)           # Hz
+        # 깊이는 물체 앞면까지라 중심까지 더할 반폭 (m). feat/yolo 부품 치수 기준
+        self.declare_parameter('center_offsets', DEFAULT_CENTER_OFFSETS)
         for name, value in vars(ControlParams()).items():
             self.declare_parameter(name, value)
         for name, value in vars(SessionParams()).items():
             self.declare_parameter(name, value)
 
+        self.center_offsets = parse_center_offsets(self.param('center_offsets'))
         self.depth_cache = deque(maxlen=15)   # (stamp_ns, frame_id, depth 배열)
         self.camera_info = None
         self.pending_detection = None         # 깊이보다 먼저 도착한 검출
@@ -168,6 +174,7 @@ class AlignNode(Node):
             return
         tr, q = tf.transform.translation, tf.transform.rotation
         x_b, y_b, _ = transform_point(p_cam, (tr.x, tr.y, tr.z), (q.x, q.y, q.z, q.w))
+        x_b, y_b = surface_to_center(x_b, y_b, tr.x, tr.y, self.center_offsets.get(target, 0.0))
         with self.lock:
             if self.active_target == target:
                 self.measurement = (t_ns / 1e9, x_b, y_b)

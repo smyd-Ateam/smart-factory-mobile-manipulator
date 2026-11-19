@@ -5,7 +5,8 @@ import pytest
 
 from visual_servoing.geometry import (decode_depth, depth_at, matrix_to_quat,
                                       optical_rotation_in_base, pixel_to_camera,
-                                      quat_to_matrix, range_bearing_error,
+                                      parse_center_offsets, quat_to_matrix,
+                                      range_bearing_error, surface_to_center,
                                       transform_point)
 from visual_servoing.mock_model import CameraMount, observe
 
@@ -91,3 +92,25 @@ def test_full_chain_recovers_true_error(obj):
     e_r, e_b = range_bearing_error(x_b, y_b, 0.3)
     assert e_r == pytest.approx(math.hypot(obj[0], obj[1]) - 0.3, abs=1e-9)
     assert e_b == pytest.approx(math.atan2(obj[1], obj[0]), abs=1e-9)
+
+
+def test_surface_to_center_moves_away_from_camera_horizontally():
+    # 카메라 (0.1, 0), 표면 점 (0.5, 0.3): 수평 방향 (0.8, 0.6)으로 0.01 m 밀린다
+    x, y = surface_to_center(0.5, 0.3, 0.1, 0.0, 0.01)
+    assert (x, y) == pytest.approx((0.508, 0.306))
+
+
+def test_surface_to_center_zero_offset_or_same_point():
+    assert surface_to_center(0.5, 0.3, 0.1, 0.0, 0.0) == pytest.approx((0.5, 0.3))
+    assert surface_to_center(0.1, 0.0, 0.1, 0.0, 0.01) == pytest.approx((0.1, 0.0))
+
+
+def test_parse_center_offsets():
+    assert parse_center_offsets(['pin:0.01', ' block : 0.0125 ']) == {
+        'pin': 0.01, 'block': 0.0125}
+
+
+@pytest.mark.parametrize('bad', [['pin'], ['pin:abc'], ['pin:-0.01'], [':0.01']])
+def test_parse_center_offsets_rejects_bad(bad):
+    with pytest.raises(ValueError):
+        parse_center_offsets(bad)

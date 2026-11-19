@@ -6,6 +6,9 @@ mock_scene_node와 align_node가 떠 있는 상태에서 실행한다.
 
   ros2 run visual_servoing mock_trials --ros-args -p trials:=20
 
+Gazebo 시험(sim_align.launch.py)에서는 scene:=sim, use_sim_time:=true 를 준다.
+정렬 시간은 노드 시계 기준이라 Gazebo에서는 시뮬레이션 시간이다.
+
 시작 위치: 물체에서 standoff_m + nav_margin 떨어진 곳(물체 정면)을 기준으로
 위치 오차 반지름 nav_error_m 안 균등, yaw 오차 ±nav_yaw_error 균등.
 """
@@ -25,13 +28,16 @@ from std_srvs.srv import Trigger
 
 from visual_servoing.control import ControlParams
 
-MOCK_NODE = '/servoing_mock_scene'
+SCENES = ('mock', 'sim')   # mock_scene_node, sim_scene_node
 
 
 class Trials(Node):
 
     def __init__(self):
         super().__init__('servoing_mock_trials')
+        self.declare_parameter('scene', 'mock')
+        self.declare_parameter('settle_sec', 0.5)       # 리셋 뒤 기다리는 시간 (벽시계)
+        self.declare_parameter('wall_factor', 1.0)      # 결과 대기 = (timeout_sec + 10) × 이 값
         self.declare_parameter('trials', 20)
         self.declare_parameter('target_class', 'pin')
         self.declare_parameter('standoff_m', 0.25)
@@ -43,12 +49,16 @@ class Trials(Node):
         self.declare_parameter('seed', 0)
         self.declare_parameter('csv', '')
 
+        scene = self.p('scene')
+        if scene not in SCENES:
+            raise ValueError(f'scene은 {SCENES} 중 하나: {scene!r}')
         self.truth = None
-        self.create_subscription(PointStamped, '/servoing/mock_object_in_base',
+        self.create_subscription(PointStamped, f'/servoing/{scene}_object_in_base',
                                  lambda m: setattr(self, 'truth', m.point), 10)
         self.client = ActionClient(self, Align, '/servoing/align')
-        self.reset = self.create_client(Trigger, '/servoing/mock_reset')
-        self.set_params = self.create_client(SetParameters, MOCK_NODE + '/set_parameters')
+        self.reset = self.create_client(Trigger, f'/servoing/{scene}_reset')
+        self.set_params = self.create_client(
+            SetParameters, f'/servoing_{scene}_scene/set_parameters')
 
     def p(self, name):
         return self.get_parameter(name).value
@@ -63,7 +73,8 @@ class Trials(Node):
         prm = Parameter(name='robot_start', value=ParameterValue(
             type=ParameterType.PARAMETER_DOUBLE_ARRAY, double_array_value=list(pose)))
         self.wait(self.set_params.call_async(SetParameters.Request(parameters=[prm])), 5.0)
-        self.wait(self.reset.call_async(Trigger.Request()), 5.0)
+        res = self.wait(self.reset.call_async(Trigger.Request()), 10.0)
+        return res is not None and res.success
 
     def run(self):
         for c, name in ((self.client, 'Align 서버'), (self.reset, 'mock_reset'),
@@ -84,18 +95,24 @@ class Trials(Node):
             a = rng.uniform(-math.pi, math.pi)
             start = (ox - d + r * math.cos(a), oy + r * math.sin(a),
                      rng.uniform(-self.p('nav_yaw_error'), self.p('nav_yaw_error')))
-            self.set_start(start)
-            time.sleep(0.5)   # 리셋 뒤 새 프레임이 들어오도록
+            if not self.set_start(start):
+                self.get_logger().error(f'{i}: 시작 위치 리셋 실패, 시험 중단')
+                break
+            time.sleep(self.p('settle_sec'))   # 리셋 뒤 새 프레임이 들어오도록
 
             goal = Align.Goal(target_class=self.p('target_class'), standoff_m=standoff,
                               timeout_sec=self.p('timeout_sec'))
-            t0 = time.time()
+            t0 = self.get_clock().now()
             gh = self.wait(self.client.send_goal_async(goal), 5.0)
             if gh is None or not gh.accepted:
                 self.get_logger().error(f'{i}: 목표 거부')
                 continue
-            res = self.wait(gh.get_result_async(), self.p('timeout_sec') + 10.0)
-            elapsed = time.time() - t0
+            res = self.wait(gh.get_result_async(),
+                            (self.p('timeout_sec') + 10.0) * self.p('wall_factor'))
+            if res is None:
+                self.get_logger().error(f'{i}: 결과 대기 시간 초과, 시험 중단')
+                break
+            elapsed = (self.get_clock().now() - t0).nanoseconds / 1e9
             time.sleep(0.2)
             rclpy.spin_once(self, timeout_sec=0.1)
             tx, ty = self.truth.x, self.truth.y

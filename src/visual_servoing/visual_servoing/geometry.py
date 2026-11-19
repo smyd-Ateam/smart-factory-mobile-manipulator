@@ -105,6 +105,34 @@ def transform_point(point, translation, quaternion):
     return tuple(r @ np.asarray(point, dtype=float) + np.asarray(translation, dtype=float))
 
 
+def surface_to_center(x_b, y_b, cam_x, cam_y, offset):
+    """깊이로 잰 물체 앞면 점을 물체 중심으로 옮긴다.
+
+    깊이는 카메라 쪽 표면까지 거리라서 중심보다 반지름(반폭)만큼 가깝게 나온다.
+    base_link 평면에서 카메라 → 점 방향으로 offset만큼 민다.
+    """
+    dx, dy = x_b - cam_x, y_b - cam_y
+    n = math.hypot(dx, dy)
+    if offset == 0.0 or n < 1e-9:
+        return x_b, y_b
+    return x_b + offset * dx / n, y_b + offset * dy / n
+
+
+def parse_center_offsets(items):
+    """['pin:0.01', ...] → {'pin': 0.01}. 형식이 틀리거나 음수면 ValueError."""
+    out = {}
+    for item in items:
+        name, sep, value = item.partition(':')
+        name = name.strip()
+        if not sep or not name:
+            raise ValueError(f'center_offsets 형식은 "클래스:미터": {item!r}')
+        offset = float(value)
+        if offset < 0.0:
+            raise ValueError(f'center_offsets 값은 0 이상: {item!r}')
+        out[name] = offset
+    return out
+
+
 def range_bearing_error(x_b, y_b, standoff):
     """base_link 좌표 (x_b, y_b)의 물체에 대한 거리 오차, 방위 오차.
 
