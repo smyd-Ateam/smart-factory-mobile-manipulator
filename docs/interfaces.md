@@ -4,7 +4,7 @@
 > 코드와 이 문서가 다르면 이 문서를 먼저 고치고(PR + 리뷰) 코드를 맞춘다.
 
 - 담당: A (공통 인터페이스 · 내비게이션 · 상태머신)
-- 상태: 초안 (v0.21)
+- 상태: 초안 (v0.22)
 - `TBD` = 아직 미정. 남은 항목은 6장 체크리스트 참고.
 - 본 프로젝트는 시뮬레이션(소프트웨어)만 다룬다.
 
@@ -191,7 +191,7 @@ map
 | `/camera/depth/image_raw` | `sensor_msgs/msg/Image` | 시뮬 | C, D | `camera_optical_frame` | 깊이 이미지 (RGB-D 카메라). D는 정렬 거리 계산에 사용 |
 | `/camera/camera_info` | `sensor_msgs/msg/CameraInfo` | 시뮬 | C, D | `camera_optical_frame` | 카메라 내부 파라미터 |
 | `/perception/detections` | `vision_msgs/msg/Detection2DArray` | C | D, A | `camera_optical_frame` | YOLO 결과 (px) |
-| `/perception/target_pose` | `geometry_msgs/msg/PoseStamped` | C | A, D, B | `base_link` | 목표 물체 3D 위치. 최소 5 Hz, 목표 10 Hz. 물체가 안 보이면 발행 안 함 (3.3 참고) |
+| `/perception/target_pose` | `geometry_msgs/msg/PoseStamped` | C | A, D, B | `base_link` | 목표 물체 3D 위치. 최소 3 Hz, 목표 10 Hz. 물체가 안 보이면 발행 안 함 (3.3 참고) |
 | `/joint_states` | `sensor_msgs/msg/JointState` | 시뮬 / ros2_control | B, D | — | |
 | `/servoing/cmd_vel` | `geometry_msgs/msg/Twist` | D | 상태머신 | — | 베이스 미세 정렬용 차체 속도 명령 (팔은 고정) |
 | `/perception/target_class` | `std_msgs/msg/String` | 상태머신(A) | C | — | 이번에 잡을 물체 클래스 이름. QoS `transient_local` (나중에 켜진 노드도 마지막 값 수신) |
@@ -228,7 +228,11 @@ behavior_server (복구 동작)                        → (기본) /cmd_vel
 - orientation은 당분간 위치만 채우고 단위 쿼터니언(회전 없음)으로 둔다. B가 물체 방향(yaw)이 필요하면 C에게 요청.
 - 카메라가 팔(`link4`)에 달려 있으므로, `camera_optical_frame` → `base_link` 변환은 이미지 stamp 시점의 TF로 계산한다.
 - C는 `/perception/target_class`로 받은 클래스의 물체만 `target_pose`로 발행한다. 클래스 이름은 `Align`의 `target_class`와 같은 문자열을 쓴다.
-- 발행 주기 (C, 2026-11-09): 최소 5 Hz, 목표 10 Hz. 근거는 C 노트북(WSL, i5-1240P CPU)의 YOLOv8n 추론 시간으로, 640 입력 약 128 ms(약 7.8 Hz), 320 입력 약 73 ms(약 13.6 Hz). Gazebo와 CPU를 같이 쓰면 더 느려질 수 있어서 카메라 연동 후 다시 측정한다. `/perception/target_pose` 수신 측(A)은 `frame_id`가 `'base_link'`와 정확히 일치하지 않거나, x/y/z에 NaN/inf가 있거나, x≤0이면 해당 메시지를 무시한다(구현: f523b1f, 원준님 PR #1 제안 기반).
+- 발행 주기 (2026-11-19 갱신, PR #3): 최소 3 Hz, 목표 10 Hz. 평균이 아니라 순간 최소 주기가 3 Hz 아래로 떨어지지 않아야 한다.
+  - 최소 3 Hz 근거 (D, 2026-11-19): 검출 주기별 정렬 모의 시험 15회씩. 3 Hz(처리 지연 0.33 s) 15/15 성공, 1.5 Hz 7/15, 1 Hz 3/15 (검출이 늦게 오는 동안 차체가 너무 돌아 물체가 화면 밖으로 나감). D는 정렬 쪽 지연 보정도 추가 예정.
+  - C 실측 (2026-11-19, Gazebo와 함께 실행, Far 자세, WSL CPU): OpenVINO 적용 후 평균 약 4.4 Hz · 최소 3.8 Hz (PyTorch는 평균 약 3.0 Hz · 최소 1.4 Hz, 추론 약 165 ms → 100 ms). 최소 3 Hz 기준 충족, 목표 10 Hz에는 아직 못 미침.
+  - 이전 기준 최소 5 Hz (C, 2026-11-09)는 Gazebo 연동 전 C 노트북(WSL, i5-1240P CPU)의 YOLOv8n 추론 시간(640 입력 약 128 ms(약 7.8 Hz), 320 입력 약 73 ms(약 13.6 Hz))으로 정한 값이었다.
+- 수신 측 안전장치 (A): `/perception/target_pose` 수신 측(A)은 `frame_id`가 `'base_link'`와 정확히 일치하지 않거나, x/y/z에 NaN/inf가 있거나, x≤0이면 해당 메시지를 무시한다(구현: f523b1f, 원준님 PR #1 제안 기반).
 - `header.stamp`는 처리 시각이 아니라 이미지를 찍은 시각이다. 물체가 안 보이면 발행하지 않으므로, 받는 쪽은 stamp 기준으로 1 s 넘게 새 값이 없으면 미검출로 처리한다 (C).
 
 ---
@@ -497,14 +501,14 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
   - far / near 두 자세로 나눔 (5.6, 2026-11-15). far는 `observe_pose_01`, near 선정 완료 (2026-11-15)
 - [x] MoveIt 계획 그룹 → `dofbot_arm` (joint1~5, KDL) (B)
 - [x] MoveIt 기본 자세 → `home` (관절 전부 0, 1자 자세) (B)
-- [x] 검출 발행 주기 Hz → `target_pose` 최소 5 Hz, 목표 10 Hz (C, 3.3). 카메라 연동 후 다시 측정
+- [x] 검출 발행 주기 Hz → `target_pose` 최소 3 Hz, 목표 10 Hz (3.3). D 정렬 모의 시험 · C OpenVINO 실측으로 5 Hz에서 변경 (PR #3, 2026-11-19)
 - [x] 공용 launch 파일에 렌더러 옵션 인자 추가 (A) → `software_gl`, `headless`, `rviz_gpu`, `render_engine` (0장)
 - [ ] 카메라 해상도 (C) — 320×240(현재 테스트 값)과 640×480을 첫 학습 때 비교, RTF 영향도 함께 확인. YOLOv8n CPU 추론은 640 입력 약 7.8 Hz, 320 입력 약 13.6 Hz (C 측정)
 - [x] 상태머신 구현 방식 → 직접 만든 Python 노드 (`mm_task_manager`, `feat/state-machine`). 이동 단계 규칙은 5.5
 - [ ] `project_interfaces` 패키지 (Align, Grasp 액션) — Align 필드 확정(D, 11/9)돼서 A가 만들어 develop에 먼저 올림. 관측 자세 액션은 B 초안이 나오면 추가
 - [x] 상태머신이 Align 응답을 못 받았을 때 → `timeout_sec` + 여유 뒤 취소, `ALIGN_TIMEOUT` (D 확인, 4.1)
 - [ ] Grasp 최대 소요 시간 (B) — 상태머신 제한 시간 임시 60 s (B: 60 s보다 적게 걸릴 것 같음). 그리퍼 제어 구현 후 실제 시간 보고 조정
-- [ ] Grasp에 넘길 `target_pose`의 최대 나이 (B) — 정렬 완료 후 받은 값 중 stamp 기준 1.0 s 이내. C 발행 주기(최소 5 Hz)와 맞음. B 확인 필요
+- [ ] Grasp에 넘길 `target_pose`의 최대 나이 (B) — 정렬 완료 후 받은 값 중 stamp 기준 1.0 s 이내. C 발행 주기(최소 3 Hz, 약 0.33 s 간격)와 맞음. B 확인 필요
   - Grasp 목표는 정렬 완료 직후가 아니라, 정렬 뒤 찍힌 target_pose가 올 때까지 최대 1.0s 기다렸다 보냄 (구현 메모 — B 확인 필요, 확정 스펙 아님)
 - [x] Nav2 도착 허용 오차 → 그대로 둠. 대신 Nav2 목표를 물체에서 `standoff_m` + 0.15 m 이상 멀리 둠 (D, 5.5)
 - [x] 목표 근처 맴돌기 → Nav2 설정은 그대로 둠. 다가오는 방향과 목표 yaw가 크게 다르면(약 180°) 도착 후 제자리 회전 중 맴돌 수 있음 (DWB와 goal checker가 서로 다른 시각의 map→odom을 쓰고, 1 Hz 재계획마다 둘 다 초기화됨. Humble 1.1.20 소스로 확인, 2026-11-13). object 모드는 목표 yaw가 물체를 바라보는 방향(= 다가오는 방향)이라 큰 회전이 거의 없고, 남는 yaw 오차는 D 정렬(시작 범위 ±0.35 rad)이 받는다. goal 모드에서 목표 yaw를 정할 때는 다가오는 방향에 가깝게 정한다 (A)
@@ -546,3 +550,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-18 | v0.20 | 3.3 `/perception/target_pose` 수신 측(A) 안전장치 필터 비고 추가: `frame_id`가 `base_link`가 아니거나, x/y/z에 NaN/inf가 있거나, x≤0이면 무시 (구현 f523b1f, C 제안 PR #1. 버전 유지) | A |
 | 2026-11-19 | v0.21 | 5.6 Near→Pre-grasp 전환 방식 확정: Align 2단계 호출(near 1차 standoff 0.35 m → 정지 상태에서 observe_pose로 pre-grasp 전환 → 2차 최종 standoff), 5.2 재정렬과 별개, PR #5 확정 전까지 코드 미반영. 깊이 이미지 32FC1(m) · NaN/inf 제외 D 재확인 (D 답변, 2026-11-19) | A |
 | 2026-11-19 | v0.21 | 3장 `/task_manager/state` QoS depth 10→17 비고 수정 (재정렬 최대 + 취소 경로 최대 12개 + 여유 5, 구독 측도 17 이상 권장. 버전 유지) | A |
+| 2026-11-19 | v0.22 | 3장 · 3.3 `/perception/target_pose` 최소 발행 주기 5 Hz → 3 Hz: D 정렬 모의 시험(3 Hz 15/15, 1.5 Hz 7/15, 1 Hz 3/15), C OpenVINO 적용 후 평균 약 4.4 Hz · 최소 3.8 Hz로 충족 (PR #3 댓글, 2026-11-19). 이전 5 Hz는 C의 Gazebo 연동 전 추론 시간 기준값(2026-11-09). 6장 체크리스트 갱신 | A |
