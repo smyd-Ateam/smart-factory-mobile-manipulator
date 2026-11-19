@@ -82,3 +82,13 @@ def test_non_finite_xyz_is_rejected(axis, bad):
 def test_x_not_in_front_is_rejected(x):
     # ③ x <= 0 무시: 카메라가 항상 앞을 봐서 차체 뒤쪽 물체는 나올 수 없음
     assert not is_valid_target_pose('base_link', x, 0.0, 0.02)
+
+
+@pytest.mark.parametrize('frame_id', [
+    'Base_Link', 'BASE_LINK',                       # 대소문자만 다름
+    'base_link ', ' base_link', ' base_link ',      # 앞뒤 공백
+    'base_link\n', 'base_link\t', '\nbase_link',    # 개행 · 탭
+])
+def test_frame_id_requires_exact_match(frame_id):
+    # ① 정확히 'base_link'만 통과: 대소문자 무시 · strip() 비교로 바꾸면 이 테스트가 깨져야 함
+    assert not is_valid_target_pose(frame_id, 0.25, 0.0, 0.02)
