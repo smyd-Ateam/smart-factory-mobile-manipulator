@@ -91,6 +91,31 @@ def test_positive_values(key):
         mission_from_dict(base_params(**{key: 0.0}))
 
 
+# ---- NaN · inf 검증 (> 0만 보면 NaN · inf가 통과: now > NaN이 항상 False라 시간 제한이 안 걸림) ----
+
+POSITIVE_KEYS = [
+    'ready_timeout_sec', 'nav_timeout_sec', 'align_timeout_sec', 'grasp_timeout_sec',
+    'cancel_timeout_sec', 'clock_watchdog_sec', 'target_pose_max_age_sec', 'arrival_xy_tol',
+    'arrival_yaw_tol', 'cmd_rate_hz', 'cmd_input_timeout_sec', 'tf_max_age_sec',
+    'pregrasp_switch_distance_m',
+]
+
+
+@pytest.mark.parametrize('value', [float('nan'), float('inf'), float('-inf')])
+@pytest.mark.parametrize('key', POSITIVE_KEYS)
+def test_positive_values_must_be_finite(key, value):
+    with pytest.raises(ValueError, match=key):
+        mission_from_dict(base_params(**{key: value}))
+
+
+@pytest.mark.parametrize('value', [1e-9, 1e6])
+@pytest.mark.parametrize('key', POSITIVE_KEYS)
+def test_small_and_large_finite_positive_values_accepted(key, value):
+    # 회귀: 유한한 양수는 경계(아주 작은 값 · 큰 값)도 그대로 통과
+    m, _ = mission_from_dict(base_params(**{key: value}))
+    assert getattr(m, key) == value
+
+
 def test_negative_max_realign_rejected():
     with pytest.raises(ValueError, match='max_realign'):
         mission_from_dict(base_params(max_realign=-1, standoff_list=[]))

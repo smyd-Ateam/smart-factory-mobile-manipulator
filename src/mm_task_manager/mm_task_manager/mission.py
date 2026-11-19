@@ -145,6 +145,9 @@ def _validate(m, group):
     if not m.target_class:
         raise ValueError('target_class must not be empty')
     for f in _POSITIVE_FIELDS:
+        # NaN이면 아래 <= 0 비교가 False라 통과하고, 시간 비교(now > NaN)가 영영 참이 안 된다
+        if not math.isfinite(getattr(m, f)):
+            raise ValueError(f'{f} must be a finite number (got {getattr(m, f)})')
         if getattr(m, f) <= 0.0:
             raise ValueError(f'{f} must be > 0 (got {getattr(m, f)})')
     for f in _NON_NEGATIVE_FIELDS:
