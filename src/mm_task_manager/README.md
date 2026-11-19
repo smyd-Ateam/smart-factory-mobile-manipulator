@@ -95,10 +95,10 @@ mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF
 
 > observe_pose는 A가 제안한 초안이고, 실제 액션 인터페이스는 B(희선님) 확인 후 확정 예정이다. B 설계와 다르면 B 쪽에 맞춰 바꾼다.
 
-- 액션: `project_interfaces/action/ObservePose` (초안). Goal `string pose_name` ("far" 또는 "near", interfaces.md 5.6), Result `bool success`, `string error_code`(5.3 코드 이름, 성공 시 빈 문자열), Feedback 없음
+- 액션: `project_interfaces/action/ObservePose` (초안). Goal `string pose_name` ("far", "near", "pre_grasp", interfaces.md 5.6. pre_grasp는 근접 정렬 2단계 전환 대비), Result `bool success`, `string error_code`(5.3 코드 이름, 성공 시 빈 문자열), Feedback 없음
 - 클라이언트: `observe_pose_client.py`의 `ObservePoseClient`. `task_manager` 노드가 만들어 두기만 하고, 상태머신 흐름에는 아직 연결하지 않았다. 넣을 위치는 Nav2 도착 확인 뒤, Align 시작 전 (B 설계가 나온 뒤 연결)
 - 결과 처리는 Align/Grasp와 같다: 목표 거부 `UNKNOWN` / `rejected`, 취소되면 detail `canceled`
-- mock: `mock_observe_pose_server` (`pose_name`을 받으면 0.5 s 뒤 success). 단독 시험 `test/test_observe_pose_client.py`
+- mock: `mock_observe_pose_server` (위 세 이름이면 0.5 s 뒤 success, 그 밖의 이름은 목표 거부). 단독 시험 `test/test_observe_pose_client.py`
 
 - 취소 요청이 거부(REJECTED)되면 취소 완료로 보지 않고 `cancel_timeout_sec`까지 기다린다 (목표가 계속 돌 수 있으므로).
 - 시작 확인에서 자기 말고 `/cmd_vel` 발행자가 있으면 `ready_timeout_sec`까지 기다린 뒤 `NAV_NOT_READY` / `cmd_vel_conflict`로 끝낸다. 이전 실행 노드가 남아 0을 섞어 보내면 Nav2가 `Failed to make progress`로 실패하기 때문 (2026-11-09 확인). discovery를 기다리려고 시작 후 `ready_min_wait_sec`(1 s) 동안은 준비 판정을 하지 않는다.

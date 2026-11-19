@@ -1,6 +1,6 @@
 # 제안 초안 (A, 2026-11-15) — 실제 인터페이스는 B 확인 후 확정 예정
 # Goal
-string pose_name           # 관측 자세 이름: "far" 또는 "near" (interfaces.md 5.6)
+string pose_name           # 관측 자세 이름: "far", "near", "pre_grasp" (interfaces.md 5.6)
 ---
 # Result
 bool success

@@ -14,7 +14,8 @@ from rclpy.action import ActionClient
 from mm_task_manager import codes
 
 ACTION_NAME = '/arm/observe_pose'
-POSE_NAMES = ('far', 'near')     # interfaces.md 5.6
+# interfaces.md 5.6. pre_grasp: 근접 정렬 2단계(near 1차 Align → pre_grasp 전환 → 2차 Align) 대비
+POSE_NAMES = ('far', 'near', 'pre_grasp')
 
 
 class ObservePoseClient:

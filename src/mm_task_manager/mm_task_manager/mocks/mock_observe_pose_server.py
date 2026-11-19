@@ -1,6 +1,7 @@
 """시험용 /arm/observe_pose 서버 (project_interfaces/action/ObservePose, 제안 초안). 팔을 움직이지 않는다.
 
-pose_name을 받으면 duration_sec(기본 0.5 s, wall time) 뒤 success true를 돌려준다.
+pose_name이 POSE_NAMES(far, near, pre_grasp)면 duration_sec(기본 0.5 s, wall time) 뒤
+success true를 돌려주고, 그 밖의 이름은 목표를 거부한다.
 받은 목표는 goal_log_path(CSV: call, pose_name)에 남긴다.
 실제 인터페이스는 B 확인 후 확정 예정 (observe_pose_client.py 참고).
 """
@@ -13,6 +14,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
 
 from mm_task_manager.mocks.mock_align_server import _open_log
+from mm_task_manager.observe_pose_client import POSE_NAMES
 from mm_task_manager.run import run
 
 
@@ -39,6 +41,9 @@ class MockObservePoseServer(Node):
         if self.goal_log is not None:
             self.goal_log.write(f'{self.calls},{goal.pose_name}\n')
             self.goal_log.flush()
+        if goal.pose_name not in POSE_NAMES:
+            self.get_logger().warn(f'unknown pose_name {goal.pose_name!r}, rejected')
+            return GoalResponse.REJECT
         return GoalResponse.ACCEPT
 
     def _execute(self, goal_handle):
