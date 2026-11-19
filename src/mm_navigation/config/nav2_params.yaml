@@ -143,8 +143,8 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.10  # 변경: D의 정렬 시작 범위(+-0.15 m) 안으로
-      yaw_goal_tolerance: 0.25
+      xy_goal_tolerance: 0.05  # 변경: D의 정렬 시작 범위(+-0.15 m) 안으로 (0.10→0.05, 정차 오차 실험 2026-11-17)
+      yaw_goal_tolerance: 0.125  # 변경: 0.25→0.125 (정차 오차 실험 2026-11-17)
     # DWB parameters
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
@@ -172,7 +172,7 @@ controller_server:
       linear_granularity: 0.05
       angular_granularity: 0.025
       transform_tolerance: 0.2
-      xy_goal_tolerance: 0.10  # 변경: goal checker와 같은 값
+      xy_goal_tolerance: 0.05  # 변경: goal checker와 같은 값
       trans_stopped_velocity: 0.25
       short_circuit_trajectory_evaluation: True
       stateful: True
