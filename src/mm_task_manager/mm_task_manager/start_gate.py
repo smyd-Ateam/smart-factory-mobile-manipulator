@@ -19,7 +19,7 @@ def waiting_for_subscribers(autostart, now, state_subscribers, required_subscrib
 
 
 class SubscriberWait:
-    """구독자 대기 경고 시점 (#43). 시간 제한은 두지 않고 기다리는 중이라는 것만 알린다.
+    """구독자 대기 경고 시점. 시간 제한은 두지 않고 기다리는 중이라는 것만 알린다.
 
     계속 기다린 지 period_sec가 되면 처음, 그 뒤로 period_sec마다 기다린 시간(s)을 돌려준다.
     그 밖에는 None. 기다림이 끝나면(waiting False) 처음부터 다시 잰다. now는 단조 증가 시각(s).

@@ -23,7 +23,7 @@ def test_waits_until_required_state_subscribers_matched():
     assert can_start(autostart=True, now=1.0, state_subscribers=2, required_subscribers=1)
 
 
-# ---- 구독자 대기 경고 (#43): 요구한 구독자가 안 붙으면 로그 없이 IDLE에서 계속 기다리던 문제 ----
+# ---- 구독자 대기 경고: 요구한 구독자가 안 붙으면 로그 없이 IDLE에서 계속 기다리던 문제 ----
 
 @pytest.mark.parametrize('autostart, now, subs, required, waiting', [
     (True, 1.0, 0, 1, True),      # 구독자 때문에만 못 나감

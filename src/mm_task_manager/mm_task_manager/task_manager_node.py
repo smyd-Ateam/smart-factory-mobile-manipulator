@@ -89,7 +89,7 @@ class TaskManagerNode(Node):
         self.autostart = self.declare_parameter('autostart', True).value
         # /task_manager/state 구독자가 이 수만큼 연결된 뒤 출발 (mock 시험용, 기본 0 = 기다리지 않음)
         self.wait_state_subscribers = self.declare_parameter('wait_state_subscribers', 0).value
-        # 구독자가 끝내 안 붙으면 IDLE에서 로그 없이 멈춰 있지 않게 5 s(wall)마다 경고 (#43, 시간 제한은 없음)
+        # 구독자가 끝내 안 붙으면 IDLE에서 로그 없이 멈춰 있지 않게 5 s(wall)마다 경고 (시간 제한은 없음)
         self.subscriber_wait = SubscriberWait(period_sec=5.0)
 
         run_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
