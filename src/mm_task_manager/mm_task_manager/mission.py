@@ -151,6 +151,9 @@ def _validate(m, group):
         if getattr(m, f) <= 0.0:
             raise ValueError(f'{f} must be > 0 (got {getattr(m, f)})')
     for f in _NON_NEGATIVE_FIELDS:
+        # NaN이면 아래 < 0 비교가 False라 통과한다
+        if not math.isfinite(getattr(m, f)):
+            raise ValueError(f'{f} must be a finite number (got {getattr(m, f)})')
         if getattr(m, f) < 0.0:
             raise ValueError(f'{f} must be >= 0 (got {getattr(m, f)})')
     if m.max_realign < 0:

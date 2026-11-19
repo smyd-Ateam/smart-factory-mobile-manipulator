@@ -116,6 +116,26 @@ def test_small_and_large_finite_positive_values_accepted(key, value):
     assert getattr(m, key) == value
 
 
+NON_NEGATIVE_KEYS = ['settle_sec', 'align_margin_sec', 'ready_min_wait_sec', 'final_zero_sec',
+                     'nav_standoff_margin_m']
+
+
+@pytest.mark.parametrize('value', [float('nan'), float('inf'), float('-inf')])
+@pytest.mark.parametrize('key', NON_NEGATIVE_KEYS)
+def test_non_negative_values_must_be_finite(key, value):
+    # >= 0만 보면 NaN이 통과한다 (NaN < 0이 False)
+    with pytest.raises(ValueError, match=key):
+        mission_from_dict(base_params(**{key: value}))
+
+
+@pytest.mark.parametrize('value', [0.0, 1e6])
+@pytest.mark.parametrize('key', NON_NEGATIVE_KEYS)
+def test_zero_and_large_finite_non_negative_values_accepted(key, value):
+    # 회귀: 0(경계)과 큰 유한값은 그대로 통과
+    m, _ = mission_from_dict(base_params(**{key: value}))
+    assert getattr(m, key) == value
+
+
 def test_negative_max_realign_rejected():
     with pytest.raises(ValueError, match='max_realign'):
         mission_from_dict(base_params(max_realign=-1, standoff_list=[]))
