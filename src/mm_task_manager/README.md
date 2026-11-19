@@ -2,7 +2,7 @@
 
 작업 상태머신: Nav2 이동 → 도착 확인 → 정렬(D) → 파지(B), 단계별 `/cmd_vel` 선택 (`docs/interfaces.md` 5.0)
 
-> 작성 중. `nav_only: true`면 이동 + 도착 확인까지, `false`면 정렬(`/servoing/align`) · 파지(`/grasp/execute`)까지 진행한다. 실제 정렬 · 파지 서버와는 아직 연동 시험 전 (mock으로만 확인, S16~S23).
+> 작성 중. `nav_only: true`면 이동 + 도착 확인까지, `false`면 정렬(`/servoing/align`) · 파지(`/grasp/execute`)까지 진행한다. 실제 정렬 · 파지 서버와는 아직 연동 시험 전 (mock으로만 확인, S16~S24).
 
 ## 빌드
 
@@ -58,7 +58,7 @@ mock 결과: `<out_dir>/<scenario>.jsonl` (상태머신 결과), `<out_dir>/<sce
 
 S1~S11은 기본 미션(object 모드, 물체 (1.40, 0))으로 돌고, mock 차체가 (1.0, 0) 근처라 목표는 (1.0, 0, 0)이다.
 
-S16~S23은 `config/mock/full.yaml`(`nav_only: false`, 정렬 제한 3.0 + 1.0 s, 파지 제한 10 s)을 더하고 mock 3개를 같이 띄운다: `mock_align_server`(`/servoing/align`, 호출마다 결과 지정, 정렬 중 `/servoing/cmd_vel` 발행), `mock_grasp_server`(`/grasp/execute`, 호출마다 결과 지정, 받은 목표 기록), `mock_target_pose`(`/perception/target_pose`, `base_link` (0.25, 0, 0.02), 10 Hz, 끌 수 있음). 수동 실행(`mock_nav_only.launch.py`)도 S16~S23이면 같은 설정과 mock을 띄우고 `task_manager`를 4 s 뒤에 시작한다. Align/Grasp 목표 기록은 `<out_dir>/<scenario>_align_goals.csv`, `<scenario>_grasp_goals.csv`.
+S16~S24는 `config/mock/full.yaml`(`nav_only: false`, 정렬 제한 3.0 + 1.0 s, 파지 제한 10 s)을 더하고 mock 3개를 같이 띄운다: `mock_align_server`(`/servoing/align`, 호출마다 결과 지정, 정렬 중 `/servoing/cmd_vel` 발행), `mock_grasp_server`(`/grasp/execute`, 호출마다 결과 지정, 받은 목표 기록), `mock_target_pose`(`/perception/target_pose`, `base_link` (0.25, 0, 0.02), 10 Hz, 끌 수 있음). 수동 실행(`mock_nav_only.launch.py`)도 S16~S23이면 같은 설정과 mock을 띄우고 (S24는 이 launch 파일의 `FULL_SCENARIOS`에 아직 없음) `task_manager`를 4 s 뒤에 시작한다. Align/Grasp 목표 기록은 `<out_dir>/<scenario>_align_goals.csv`, `<scenario>_grasp_goals.csv`.
 
 mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF), `mock_nav_server`(`/navigate_to_pose`), `mock_cmd_publisher`(충돌용 `/cmd_vel`), `cmd_recorder`(`/cmd_vel`, `/task_manager/state` CSV). `task_manager`는 3 s 늦게 시작한다
 
@@ -139,9 +139,9 @@ PYTHONNOUSERSITE=1 colcon test-result --verbose
 
 - 시나리오마다 mock 노드와 `task_manager`를 띄우고, `task_manager`가 스스로 끝나기를 45 s까지만 기다린다 (멈춘 시나리오가 전체를 막지 않음)
 - 확인: 결과 기록 값, `/task_manager/state` 단계 순서, 0이 아닌 `/cmd_vel`은 NAVIGATE · ALIGN 동안에만, 끝난 뒤 0만 약 1 s 발행 후 종료, 시나리오별 조건, `mock_nav_server`가 받은 이동 목표(1 mm / 0.001 rad 이내), 이동 목표 모드와 물체까지 거리
-- S16~S23 추가 확인: mock이 받은 Align 목표(`standoff_m` 순서, `timeout_sec`) · Grasp 목표(호출 수, `base_link`, pose 나이 1.0 s 이내), 재정렬 횟수 · 실패 단계, ALIGN 동안 `/servoing/cmd_vel` 전달. mock이 3개 더 떠서 discovery가 늦으므로 `task_manager`는 4 s 늦게 시작한다
-- Near→Pre-grasp 전환 요청 (전체 시나리오): 결과 기록 `pregrasp_request_distance_m`와 `task_manager`의 "not sent" 경고 횟수. 정렬 중 물체 0.25 m인 S16~S20 · S22는 0.25 m에서 한 번(재정렬해도 한 번), 나머지(nav_only, S21 물체 없음, S23 먼 물체)는 없음. 기준 0.35 m는 PR #1 답변 대기 중이라 확정 전
-- 마지막 결과: `~/.ros/mm_task_manager/launch_test/<시나리오>/` (`result.jsonl`, `record.csv`, `goals.csv`, S16~S23은 `align_goals.csv`, `grasp_goals.csv`)
+- S16~S24 추가 확인: mock이 받은 Align 목표(`standoff_m` 순서, `timeout_sec`) · Grasp 목표(호출 수, `base_link`, pose 나이 1.0 s 이내), 재정렬 횟수 · 실패 단계, ALIGN 동안 `/servoing/cmd_vel` 전달. mock이 3개 더 떠서 discovery가 늦으므로 `task_manager`는 4 s 늦게 시작한다
+- Near→Pre-grasp 전환 요청 (전체 시나리오): 결과 기록 `pregrasp_request_distance_m`와 `task_manager`의 "not sent" 경고 횟수. 정렬 중 물체 0.25 m인 S16~S20 · S22는 0.25 m에서 한 번(재정렬해도 한 번), 나머지(nav_only, S21 물체 없음, S23 먼 물체, S24 걸러진 물체)는 없음. 기준 0.35 m는 PR #1 답변 대기 중이라 확정 전
+- 마지막 결과: `~/.ros/mm_task_manager/launch_test/<시나리오>/` (`result.jsonl`, `record.csv`, `goals.csv`, S16~S24는 `align_goals.csv`, `grasp_goals.csv`)
 - JUnit 결과(`build/mm_task_manager/pytest.xml`)에는 launch 시험 파일 전체가 테스트 1개로 나온다. 실패하면 `log/latest_test/mm_task_manager/stdout_stderr.log`에 시나리오별 실패가 나온다
 - `/task_manager/state`는 `transient_local` depth 17(`state_qos.py`)이라, 늦게 연결된 구독자도 지난 단계(최근 17개)를 받는다. 한 실행의 최대 메시지 수는 2 × `max_realign` + 8개(기본 12개: 재정렬 최대 + 시간 제한 취소)이고 여유 5를 더한 값이다. 예전 depth 10에서는 이 경로에서 IDLE · WAIT_READY를 잃었다. 구독하는 쪽도 depth 17 이상으로 받아야 한 번에 온 이력을 버리지 않는다. 예전 depth 1에서는 IDLE이 WAIT_READY에 덮여, 늦게 붙은 recorder가 IDLE을 못 받았다. 새로 뜬 `task_manager`가 발견되기까지 S16~S23에서 2~3 s 걸릴 때가 있어(시작 지연을 늘려도 안 줄어듦) WAIT_READY까지 놓친 적도 있어서, mock 설정(`config/mock/common.yaml`)은 `wait_state_subscribers: 1`로 `cmd_recorder`가 붙은 뒤 출발하게도 한다(기본값 0이면 기다리지 않음). 구독자가 끝내 안 붙어도 시간 제한은 없고, 기다리는 동안 5 s(wall)마다 `still waiting for /task_manager/state subscribers` 경고를 남긴다(`start_gate.SubscriberWait`). 단계 순서는 IDLE부터 정확히 비교한다
 
