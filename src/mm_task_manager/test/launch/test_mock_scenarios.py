@@ -206,7 +206,7 @@ class TestResult(unittest.TestCase):
 
     def test_state_sequence(self, out_dir, scenario):
         # /task_manager/state: 단계가 바뀔 때만, interfaces.md v0.14 이름으로, IDLE부터 빠짐없이.
-        # transient_local depth 10(state_qos.py)이라 recorder가 늦게 붙어도 지난 단계를 받는다
+        # transient_local depth 17(state_qos.py)이라 recorder가 늦게 붙어도 지난 단계를 받는다
         _, states, _ = _load(out_dir)
         got = [s for _, _, s in states]
         self.assertEqual(got, EXPECTED[scenario][5])

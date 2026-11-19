@@ -6,7 +6,7 @@ task_manager:
     cancel_timeout_sec: 3.0
     clock_watchdog_sec: 3.0
     # cmd_recorder가 /task_manager/state에 붙은 뒤 출발 (새 노드 discovery가 2~3 s 걸릴 때
-    # 앞 단계를 놓치지 않게. 시작 지연만으로는 이 지연이 줄지 않음. 상태 토픽 depth 10과 함께 씀)
+    # 앞 단계를 놓치지 않게. 시작 지연만으로는 이 지연이 줄지 않음. 상태 토픽 depth 17과 함께 씀)
     wait_state_subscribers: 1
 mock_tf:
   ros__parameters:

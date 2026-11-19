@@ -102,7 +102,7 @@ class TaskManagerNode(Node):
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.class_pub = self.create_publisher(String, '/perception/target_class', latched)
-        # 현재 단계 이름 (interfaces.md v0.14 3장): 바뀔 때만 발행, transient_local depth 10 (state_qos.py)
+        # 현재 단계 이름 (interfaces.md v0.14 3장): 바뀔 때만 발행, transient_local depth 17 (state_qos.py)
         self.state_pub = self.create_publisher(String, '/task_manager/state', state_qos())
         self.state_reporter = StateReporter()
         self._report_state()
