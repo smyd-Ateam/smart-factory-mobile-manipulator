@@ -36,7 +36,7 @@ from mm_task_manager.align_distance import target_distance_event
 from mm_task_manager.result_log import append_jsonl
 from mm_task_manager.final_stop import FinalStop
 from mm_task_manager.run import NodeExit, run
-from mm_task_manager.start_gate import can_start
+from mm_task_manager.start_gate import SubscriberWait, can_start, waiting_for_subscribers
 from mm_task_manager.state_qos import state_qos
 from mm_task_manager.states import TERMINAL_STATES, State, StateReporter
 from mm_task_manager.target_pose import SEND, STALE, GraspPoseRequest, is_valid_target_pose
@@ -89,6 +89,8 @@ class TaskManagerNode(Node):
         self.autostart = self.declare_parameter('autostart', True).value
         # /task_manager/state 구독자가 이 수만큼 연결된 뒤 출발 (mock 시험용, 기본 0 = 기다리지 않음)
         self.wait_state_subscribers = self.declare_parameter('wait_state_subscribers', 0).value
+        # 구독자가 끝내 안 붙으면 IDLE에서 로그 없이 멈춰 있지 않게 5 s(wall)마다 경고 (#43, 시간 제한은 없음)
+        self.subscriber_wait = SubscriberWait(period_sec=5.0)
 
         run_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
         self.machine = sm.TaskMachine(mission, run_id)
@@ -179,9 +181,18 @@ class TaskManagerNode(Node):
         now = self._now()
         state = self.machine.state
         if state == State.IDLE:
-            if can_start(self.autostart, now, self.state_pub.get_subscription_count(),
-                         self.wait_state_subscribers):
+            subs = self.state_pub.get_subscription_count()
+            if can_start(self.autostart, now, subs, self.wait_state_subscribers):
                 self._dispatch(sm.Start(now=now))
+                return
+            waited = self.subscriber_wait.update(
+                time.monotonic(),
+                waiting_for_subscribers(self.autostart, now, subs, self.wait_state_subscribers))
+            if waited is not None:
+                self.get_logger().warn(
+                    f'still waiting for /task_manager/state subscribers: {subs}/'
+                    f'{self.wait_state_subscribers} after {waited:.0f} s '
+                    '(wait_state_subscribers, no timeout)')
             return
         if state == State.WAIT_READY:
             self._poll_lifecycle(now)
