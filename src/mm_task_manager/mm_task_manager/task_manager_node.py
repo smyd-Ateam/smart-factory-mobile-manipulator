@@ -33,7 +33,7 @@ from mm_task_manager.cmd_select import NAV, SERVO, CmdSelector, source_for
 from mm_task_manager.geometry import yaw_from_quaternion
 from mm_task_manager.mission import Mission, mission_from_dict
 from mm_task_manager.align_distance import target_distance_event
-from mm_task_manager.result_log import append_jsonl
+from mm_task_manager.result_log import append_jsonl, record_text, writable_problem
 from mm_task_manager.final_stop import FinalStop
 from mm_task_manager.run import NodeExit, run
 from mm_task_manager.start_gate import SubscriberWait, can_start, waiting_for_subscribers
@@ -86,6 +86,8 @@ class TaskManagerNode(Node):
         for w in warnings:
             self.get_logger().warn(w)
         self.mission = mission
+        # 결과 기록 경로를 미리 확인: 못 쓰면 에러 로그만 남기고 그대로 진행 (기록은 부가 기능)
+        self._check_result_log()
         self.autostart = self.declare_parameter('autostart', True).value
         # /task_manager/state 구독자가 이 수만큼 연결된 뒤 출발 (mock 시험용, 기본 0 = 기다리지 않음)
         self.wait_state_subscribers = self.declare_parameter('wait_state_subscribers', 0).value
@@ -415,12 +417,22 @@ class TaskManagerNode(Node):
             self.get_logger().warn(f'cancel of goal #{token} not accepted '
                                    f'(return_code {resp.return_code})')
 
+    def _check_result_log(self):
+        path = self.mission.result_log_path
+        problem = writable_problem(path)
+        if problem is not None:
+            self.get_logger().error(
+                f'result log not writable: {path!r} ({problem}); continuing, '
+                'the record will only be in this log')
+
     def _write_record(self, record):
         record = dict(record, wall_time=datetime.datetime.now().isoformat(timespec='seconds'))
         try:
             append_jsonl(self.mission.result_log_path, record)
-        except OSError as e:
-            self.get_logger().error(f'result log write failed: {e}')
+        except Exception as e:
+            # 어떤 예외든 밖으로 내지 않음: 뒤이은 상태 발행 · final stop이 꼭 실행되게.
+            # 파일 대신 로그에서라도 결과를 되살릴 수 있게 기록 내용을 같이 남긴다
+            self.get_logger().error(f'result log write failed: {e}; record: {record_text(record)}')
         self.get_logger().info(
             f'finished {record["final_state"]} error_code={record["error_code"]!r} '
             f'detail={record["detail"]!r} stage={record["failed_stage"]!r}')

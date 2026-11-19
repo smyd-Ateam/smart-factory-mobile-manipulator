@@ -99,6 +99,7 @@ mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF
 - 시작 확인에서 자기 말고 `/cmd_vel` 발행자가 있으면 `ready_timeout_sec`까지 기다린 뒤 `NAV_NOT_READY` / `cmd_vel_conflict`로 끝낸다. 이전 실행 노드가 남아 0을 섞어 보내면 Nav2가 `Failed to make progress`로 실패하기 때문 (2026-11-09 확인). discovery를 기다리려고 시작 후 `ready_min_wait_sec`(1 s) 동안은 준비 판정을 하지 않는다.
 - 끝나면(SUCCEEDED, FAILED, 실행 중단 모두) `/cmd_vel` 0을 `final_zero_sec`(1 s, wall time) 동안 보낸 뒤 노드가 스스로 종료한다. DiffDrive가 마지막 명령(0)을 유지하므로 차체는 서 있다 (실제 시뮬에서 종료 후 5 s odom 속도 0 확인).
 - 종료(Ctrl-C) 시 `/cmd_vel` 0을 한 번 보낸다.
+- 결과 기록(`result_log_path`)은 부가 기능이라 못 써도 실행을 막지 않는다. 노드가 뜰 때 경로를 확인해서 못 쓰면 `result log not writable` 에러 로그만 남기고 진행한다(빈 파일은 만들지 않음). 끝날 때 쓰기가 어떤 예외로든 실패하면 `result log write failed` 에러 로그에 기록 내용(JSON 한 줄, 안 되면 `repr`)을 같이 남기고, 상태 발행과 `/cmd_vel` 0 발행(final stop)은 그대로 한다 (`result_log.py`, `test_write_record.py`).
 
 ## 구조
 
