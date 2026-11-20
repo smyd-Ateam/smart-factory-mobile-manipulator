@@ -130,8 +130,11 @@ class TaskManagerNode(Node):
 
         # Grasp에 넘길 물체 위치 (C, base_link). 정렬 뒤 찍힌 1 s 이내 값이 올 때까지 Grasp 전송 대기
         self.latest_target_pose = None
+        # 점프 기준(직전 값)은 마지막 통과 뒤 stamp 기준 target_pose_max_age_sec 넘게 지나면 초기화
+        # (interfaces.md 3.3: 1 s 넘게 새 값이 없으면 미검출 → 다시 잡힌 값은 첫 메시지처럼)
         self.target_pose_filter = TargetPoseFilter(mission.target_pose_max_x_m,
-                                                   mission.target_pose_max_jump_m)
+                                                   mission.target_pose_max_jump_m,
+                                                   reset_sec=mission.target_pose_max_age_sec)
         self.grasp_request = None
         self.create_subscription(PoseStamped, '/perception/target_pose',
                                  self._on_target_pose, 10)
@@ -329,7 +332,8 @@ class TaskManagerNode(Node):
     def _on_target_pose(self, msg):
         p = msg.pose.position
         frame_id = msg.header.frame_id
-        reason = self.target_pose_filter.check(frame_id, p.x, p.y, p.z)
+        reason = self.target_pose_filter.check(frame_id, p.x, p.y, p.z,
+                                               stamp=_stamp_sec(msg.header.stamp))
         if reason is not None:
             # 안전장치(C 제안): Grasp 목표 후보에도, 전환 거리 판단에도 안 씀. 어떤 필터인지 로그에 구분
             self.get_logger().warn(

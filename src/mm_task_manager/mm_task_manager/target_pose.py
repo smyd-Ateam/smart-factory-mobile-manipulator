@@ -69,16 +69,30 @@ def is_valid_target_pose(frame_id, x, y, z, max_x=math.inf, prev_x=None, max_jum
 
 
 class TargetPoseFilter:
-    """노드용: 직전에 통과시킨 x를 기억하며 거른다. 걸러진 메시지는 기준(prev_x)을 바꾸지 않는다."""
+    """노드용: 직전에 통과시킨 x를 기억하며 거른다. 걸러진 메시지는 기준(prev_x)을 바꾸지 않는다.
 
-    def __init__(self, max_x, max_jump):
+    reset_sec: 새 메시지 stamp가 마지막으로 통과한 메시지 stamp보다 reset_sec 넘게 뒤(또는 거꾸로)면
+    직전 값을 지우고 첫 메시지처럼 본다. 물체를 놓쳤다가 다시 잡았을 때 x가 max_jump 넘게 달라져 있어도
+    계속 x_jump로 걸리지 않게 하기 위함. None이거나 stamp를 안 주면 초기화하지 않는다.
+    """
+
+    def __init__(self, max_x, max_jump, reset_sec=None):
         self.max_x = max_x
         self.max_jump = max_jump
+        self.reset_sec = reset_sec
         self.prev_x = None
+        self.prev_stamp = None
 
-    def check(self, frame_id, x, y, z):
-        reason = target_pose_reject_reason(frame_id, x, y, z, self.max_x, self.prev_x,
-                                           self.max_jump)
+    def _expired(self, stamp):
+        if self.reset_sec is None or stamp is None or self.prev_stamp is None:
+            return False
+        dt = stamp - self.prev_stamp
+        return dt < 0.0 or dt > self.reset_sec
+
+    def check(self, frame_id, x, y, z, stamp=None):
+        prev_x = None if self._expired(stamp) else self.prev_x
+        reason = target_pose_reject_reason(frame_id, x, y, z, self.max_x, prev_x, self.max_jump)
         if reason is None:
             self.prev_x = x
+            self.prev_stamp = stamp
         return reason

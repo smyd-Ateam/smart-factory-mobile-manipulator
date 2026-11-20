@@ -175,3 +175,62 @@ def test_filter_passes_normal_approach():
     f = TargetPoseFilter(max_x=MAX_X, max_jump=MAX_JUMP)
     xs = [0.60 - 0.03 * i for i in range(12)]
     assert [f.check('base_link', x, 0.01, 0.02) for x in xs] == [None] * len(xs)
+
+
+# ---- 점프 필터 직전 값 초기화: 마지막으로 통과한 값보다 reset_sec 넘게 뒤에 찍힌 메시지는 첫 메시지처럼 ----
+# (물체를 놓쳤다가 다시 잡았을 때 x가 0.1 m 넘게 달라져 있으면 계속 x_jump로 걸려 OBJECT_NOT_FOUND가 되는 것 방지.
+#  기준은 target_pose_max_age_sec(1.0 s): interfaces.md 3.3 "stamp 기준 1 s 넘게 새 값이 없으면 미검출")
+
+def reset_filter():
+    return TargetPoseFilter(max_x=MAX_X, max_jump=MAX_JUMP, reset_sec=1.0)
+
+
+def test_jump_reference_resets_after_gap():
+    f = reset_filter()
+    assert f.check('base_link', 0.5, 0.0, 0.02, stamp=10.0) is None
+    assert f.check('base_link', 0.8, 0.0, 0.02, stamp=10.5) == 'x_jump'   # 0.5 s 뒤: 아직 기준 유지
+    assert f.check('base_link', 0.8, 0.0, 0.02, stamp=11.2) is None       # 마지막 통과(10.0)에서 1.2 s
+    assert f.prev_x == 0.8
+
+
+def test_jump_reference_kept_within_gap():
+    f = reset_filter()
+    f.check('base_link', 0.5, 0.0, 0.02, stamp=10.0)
+    assert f.check('base_link', 0.8, 0.0, 0.02, stamp=10.9) == 'x_jump'
+
+
+def test_jump_reference_kept_at_exact_gap():
+    # "넘게" 지나야 초기화: 정확히 1.0 s는 기준 유지 (이진수로 정확한 값 사용)
+    f = TargetPoseFilter(max_x=MAX_X, max_jump=MAX_JUMP, reset_sec=1.0)
+    f.check('base_link', 0.5, 0.0, 0.02, stamp=10.0)
+    assert f.check('base_link', 0.8, 0.0, 0.02, stamp=11.0) == 'x_jump'
+
+
+def test_reacquired_object_not_locked_out():
+    # 0.5에서 놓친 뒤 0.3에서 다시 잡힘: 1 s 동안은 x_jump로 걸러지다가 그 뒤 통과, 이후 정상 흐름
+    f = reset_filter()
+    assert f.check('base_link', 0.5, 0.0, 0.02, stamp=10.0) is None
+    blocked = [f.check('base_link', 0.3, 0.0, 0.02, stamp=10.1 + 0.1 * i) for i in range(9)]
+    assert blocked == ['x_jump'] * 9                                         # 10.1 ~ 10.9
+    assert f.check('base_link', 0.3, 0.0, 0.02, stamp=11.1) is None
+    assert f.check('base_link', 0.29, 0.0, 0.02, stamp=11.2) is None
+
+
+def test_stamp_going_backwards_resets_reference():
+    # 시뮬 재시작 등으로 stamp가 거꾸로 가면 직전 값은 믿지 않음
+    f = reset_filter()
+    f.check('base_link', 0.5, 0.0, 0.02, stamp=10.0)
+    assert f.check('base_link', 0.8, 0.0, 0.02, stamp=5.0) is None
+
+
+def test_other_filters_still_apply_after_reset():
+    f = reset_filter()
+    f.check('base_link', 0.5, 0.0, 0.02, stamp=10.0)
+    assert f.check('base_link', 2.5, 0.0, 0.02, stamp=12.0) == 'x_above_max'
+    assert f.check('map', 0.5, 0.0, 0.02, stamp=12.0) == 'frame_id'
+
+
+def test_without_stamp_keeps_previous_behavior():
+    f = reset_filter()
+    f.check('base_link', 0.5, 0.0, 0.02)
+    assert f.check('base_link', 0.8, 0.0, 0.02) == 'x_jump'
