@@ -42,6 +42,7 @@
 >   - 재테스트 (2026-11-05, C): RViz CPU 렌더링으로 바꾼 뒤 꺼지지 않고 정상 동작 확인. 화면 없이(`headless:=true`) 실행하면 RTF 평균 약 99% (5회, 98.7~99.7%). WSL 소프트웨어 렌더링에서는 Gazebo 화면이 속도를 가장 많이 잡아먹음
 >   - 카메라 센서를 추가하면 화면을 꺼도 카메라 영상은 렌더링되므로, 카메라 추가 후 RTF 다시 측정 예정 (C)
 > - Windows + WSL2 (B 노트북): MoveIt RViz도 `LIBGL_ALWAYS_SOFTWARE=1`을 붙여서 실행 (예: `LIBGL_ALWAYS_SOFTWARE=1 ros2 launch dofbot_moveit_config demo.launch.py`, 2026-11-03 B 노션 기록)
+> - RGB-D 카메라 렌더링 (B, 2026-11-21, `feat/grasp` 3161f10·b9e8a55): `ogre`에서는 RGB-D 컬러 영상이 회색으로 나오고, `render_engine:=ogre2`로 실행하면 컬러·깊이 모두 정상 (B WSL 환경에서 확인). launch 인자 `render_engine` 기본값은 환경별 선택을 위해 `ogre`로 유지. Mac VM에서 ogre2로 되는지는 A 확인 중
 > - 공용 launch 파일(`mm_description/launch/sim.launch.py`) 옵션: `software_gl:=true`(CPU 렌더링), `headless:=true`(Gazebo 화면 없이), `rviz:=false`(RViz 끄기), `rviz_gpu:=true`(RViz만 GPU로 그리기, Mac VM용), `render_engine`(기본 ogre)
 >   - Mac UTM VM: `ros2 launch mm_description sim.launch.py software_gl:=true headless:=true rviz_gpu:=true`
 >   - WSL2: `ros2 launch mm_description sim.launch.py software_gl:=true`
@@ -60,7 +61,7 @@
 | 시간 | s |
 | 선속도 / 각속도 | m/s, rad/s |
 | 이미지 좌표 | px (좌상단 원점, u: 오른쪽, v: 아래) |
-| 깊이 이미지 | m (`32FC1`) — TBD: 카메라 플러그인 출력 형식 확인 (C) |
+| 깊이 이미지 | m (`32FC1`) — D 확인(2026-11-19), B 통합 모델 RGB-D 카메라에서 확인(2026-11-21, WSL) |
 
 - 깊이 이미지가 `32FC1`이면, 측정 범위를 벗어난 픽셀은 `inf`/`NaN`으로 나오므로 이 값은 계산에서 무시한다 (C 제안).
 
@@ -171,9 +172,10 @@ map
   - 진행 (B, 2026-11-07): 새 분리형 모델 기준으로 MoveIt2 설정 재생성 (`dofbot_arm` 그룹, `home` 자세, `dofbot_arm_controller`), RViz에서 Plan → Execute 성공. 현재는 FakeSystem(가짜 하드웨어) 기준이고 Gazebo · ros2_control 연동은 아직 (`dofbot_gazebo.xacro`, `dofbot_ros2control.xacro`는 비활성화 상태)
 - [ ] 그리퍼 링크 · 관절, `ee_link` 추가
   - 진행 (B, 2026-11-07): 그리퍼가 분리된 새 모델로 해결. 좌우 집게가 `grip_joint`와 mimic 관절로 함께 움직이고 RViz에서 개폐 확인. 이름 확정(2026-11-08): `Gripping_point_Link` → `ee_link`, `grip_joint` → `gripper_joint`, `gripper_link`는 고정 장착 기준 링크. xacro 반영 완료(B, 2026-11-08). `gripper_controller` 구성은 B 작업 예정
-- [ ] 카메라 링크 · 센서 플러그인 추가
+- [x] 카메라 링크 · 센서 플러그인 추가
   - 진행 (B, 2026-11-08): `camera_link`, `camera_optical_frame` 추가. `dofbot_gazebo.xacro`에 RGB-D 센서(`ignition_frame_id`: `camera_optical_frame`)가 있으나 아직 비활성화 상태
   - 연동할 때 주의: 센서 토픽 이름이 `rgbd_camera/image`, `rgbd_camera/depth_image`, `rgbd_camera/camera_info` 등이라 3장 이름(`/camera/...`)과 다르다. bridge에서 3장 이름으로 맞춘다
+  - 완료 (B, 2026-11-21, `feat/grasp` 35e9331·2052c89): 통합 모델(`mm_robot`) `mm_camera.gazebo.xacro`의 RGB-D 센서를 `sim.launch.py` bridge에서 3장 이름으로 연결 (`/rgbd_camera/image` → `/camera/image_raw`, `/rgbd_camera/depth_image` → `/camera/depth/image_raw`, `/rgbd_camera/camera_info` → `/camera/camera_info`). 시험용 일반 RGB 카메라 `arm_rgb_test`는 삭제해서 카메라는 RGB-D 하나만 쓴다. B WSL에서 세 토픽 발행자 1개 · 수신 확인, 초록 큐브 깊이 약 0.603 m 확인
 - [x] mesh 경로를 실제 패키지 이름에 맞게 수정 → 새 모델 패키지 `dofbot_description`에서 RViz 표시 확인 (B)
 
 ---
@@ -187,8 +189,8 @@ map
 | `/odom` | `nav_msgs/msg/Odometry` | 시뮬 | A | `odom` | 차동구동 플러그인이 발행. `odom → base_footprint` TF도 함께 발행 |
 | `/cmd_vel` | `geometry_msgs/msg/Twist` | 상태머신(A)이 선택한 쪽 | 시뮬 (차체) | — | 차체 속도. 이동 중엔 Nav2, 정렬 중엔 D의 명령을 전달 (5.0 참고) |
 | `/nav2/cmd_vel` | `geometry_msgs/msg/Twist` | A (Nav2: velocity_smoother, behavior_server) | 상태머신 | — | Nav2 최종 출력. velocity_smoother 출력(`cmd_vel_smoothed`)과 behavior_server 출력(`cmd_vel`)을 이 이름으로 리매핑 (3.1 참고) |
-| `/camera/image_raw` | `sensor_msgs/msg/Image` | 시뮬 | C, D | `camera_optical_frame` | RGB 이미지. 시뮬 플러그인에서 이 이름으로 설정 |
-| `/camera/depth/image_raw` | `sensor_msgs/msg/Image` | 시뮬 | C, D | `camera_optical_frame` | 깊이 이미지 (RGB-D 카메라). D는 정렬 거리 계산에 사용 |
+| `/camera/image_raw` | `sensor_msgs/msg/Image` | 시뮬 | C, D | `camera_optical_frame` | RGB 이미지 (`rgb8`). RGB-D 카메라 컬러 영상을 bridge에서 이 이름으로 연결 (2.4) |
+| `/camera/depth/image_raw` | `sensor_msgs/msg/Image` | 시뮬 | C, D | `camera_optical_frame` | 깊이 이미지 (RGB-D 카메라, `32FC1`, m). D는 정렬 거리 계산에 사용 |
 | `/camera/camera_info` | `sensor_msgs/msg/CameraInfo` | 시뮬 | C, D | `camera_optical_frame` | 카메라 내부 파라미터 |
 | `/perception/detections` | `vision_msgs/msg/Detection2DArray` | C | D, A | `camera_optical_frame` | YOLO 결과 (px) |
 | `/perception/target_pose` | `geometry_msgs/msg/PoseStamped` | C | A, D, B | `base_link` | 목표 물체 3D 위치. 최소 3 Hz, 목표 10 Hz. 물체가 안 보이면 발행 안 함 (3.3 참고) |
@@ -445,7 +447,7 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - 알아둘 점: observe_pose 액션 초안(PR #5, 7b9920f)은 pre-grasp 자세 이름을 추가하는 작업을 이번에 같이 진행했다(efe20a7, pose_name "pre_grasp").
 - 3장 /task_manager/state 단계 목록에 이 전환 구간을 위한 서브상태가 필요한지는 추후 구현 때 결정.
 
-깊이 이미지 형식도 D가 재확인: 32FC1(m), NaN/inf는 정렬 쪽 계산에서 제외(원준님은 11/18에 32FC1 가능성이 높다고 답변, 아직 확정 아님).
+깊이 이미지 형식도 D가 재확인: 32FC1(m), NaN/inf는 정렬 쪽 계산에서 제외(원준님은 11/18에 32FC1 가능성이 높다고 답변, 아직 확정 아님). B도 통합 모델 RGB-D 카메라에서 32FC1 확인 (2026-11-21, WSL).
 
 - near 자세 조건 (D): near 자세에서 정렬 시작 시점(Nav2 도착 기준 약 0.27~0.53 m)과 정렬 끝 시점(standoff 기준 약 0.2~0.55 m) 범위의 물체가 계속 화면 안에 보여야 한다
 - near 자세 관절 값은 B가 far 자세 가시성을 확인한 뒤 선정했다 (2026-11-15, 위 표)
@@ -455,14 +457,14 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 항목 | 값 |
 |---|---|
 | 해상도 | 640×480 |
-| 주기 | 10 Hz |
+| 주기 | 30 Hz (RGB-D 카메라 `update_rate` 설정값) |
 | 화각 (FOV) | 수평 1.047 rad (약 60°), 수직 약 46.8° |
 | 초점 거리 · 중심 | fx = fy = 554.3827, cx = 320.0, cy = 240.0 |
 | 왜곡 | `plumb_bob`, [0, 0, 0, 0, 0] |
 
 - Gazebo가 해상도 · FOV로 생성한 값이고, 별도 캘리브레이션은 없다
 - 관측 자세가 바뀌어도 내부 파라미터는 같다
-- 이 파라미터는 `arm_rgb_test`(10 Hz) 기준, `rgbd_camera`(30 Hz)는 별도
+- 처음 측정(2026-11-15)은 일반 RGB 카메라 `arm_rgb_test`(10 Hz) 기준. 2026-11-21 B가 이 카메라를 삭제하고 RGB-D 카메라(`rgbd_camera`, 30 Hz) 하나로 정리함 (2.4). 두 센서의 해상도(640×480) · 수평 FOV(1.047 rad) · 장착 pose 설정이 같아서 내부 파라미터도 같을 것으로 보지만, `rgbd_camera` 기준 `/camera/camera_info` 실측 재확인은 아직
 
 ---
 
@@ -551,3 +553,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-19 | v0.21 | 5.6 Near→Pre-grasp 전환 방식 확정: Align 2단계 호출(near 1차 standoff 0.35 m → 정지 상태에서 observe_pose로 pre-grasp 전환 → 2차 최종 standoff), 5.2 재정렬과 별개, PR #5 확정 전까지 코드 미반영. 깊이 이미지 32FC1(m) · NaN/inf 제외 D 재확인 (D 답변, 2026-11-19) | A |
 | 2026-11-19 | v0.21 | 3장 `/task_manager/state` QoS depth 10→17 비고 수정 (재정렬 최대 + 취소 경로 최대 12개 + 여유 5, 구독 측도 17 이상 권장. 버전 유지) | A |
 | 2026-11-19 | v0.22 | 3장 · 3.3 `/perception/target_pose` 최소 발행 주기 5 Hz → 3 Hz: D 정렬 모의 시험(3 Hz 15/15, 1.5 Hz 7/15, 1 Hz 3/15), C OpenVINO 적용 후 평균 약 4.4 Hz · 최소 3.8 Hz로 충족 (PR #3 댓글, 2026-11-19). 이전 5 Hz는 C의 Gazebo 연동 전 추론 시간 기준값(2026-11-09). 6장 체크리스트 갱신 | A |
+| 2026-11-21 | v0.22 | B 통합 모델 RGB-D 카메라 연결 반영: bridge로 3장 `/camera/*` 토픽 연결, 일반 RGB 카메라 `arm_rgb_test` 삭제(2.4, 3장), 카메라 주기 10 Hz → 30 Hz와 내부 파라미터 비고(5.7), 깊이 32FC1 B 확인(1.1, 5.6), RGB-D는 `render_engine:=ogre2` 필요(B WSL 확인, 0장). 토픽 이름 · 메시지 타입 · 프레임은 그대로라 버전 유지 (PR #3 댓글, 2026-11-21) | A |
