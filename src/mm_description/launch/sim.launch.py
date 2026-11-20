@@ -14,9 +14,9 @@ from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
                             SetEnvironmentVariable)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import (Command, 
+from launch.substitutions import (Command,
                                   LaunchConfiguration,
-                                  PythonExpression, 
+                                  PythonExpression,
                                   PathJoinSubstitution)
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -91,6 +91,7 @@ def generate_launch_description():
     # Gazebo ↔ ROS 토픽 연결
     #   [ : Gazebo → ROS,  ] : ROS → Gazebo
     joint_state_gz = f'/world/{WORLD_NAME}/model/{ROBOT_NAME}/joint_state'
+
     bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
@@ -102,16 +103,23 @@ def generate_launch_description():
             '/scan@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
             joint_state_gz + '@sensor_msgs/msg/JointState[ignition.msgs.Model',
 
-            # RGB 카메라
-            '/camera/image_raw@sensor_msgs/msg/Image[ignition.msgs.Image',
-
-            # 카메라 내부 파라미터
-            '/camera/camera_info@sensor_msgs/msg/CameraInfo[ignition.msgs.CameraInfo',
+            # RGB-D 카메라 (Gazebo -> ROS 2)
+            '/rgbd_camera/image@sensor_msgs/msg/Image[ignition.msgs.Image',
+            '/rgbd_camera/depth_image@sensor_msgs/msg/Image[ignition.msgs.Image',
+            '/rgbd_camera/camera_info@sensor_msgs/msg/CameraInfo[ignition.msgs.CameraInfo',
         ],
-        remappings=[(joint_state_gz, '/joint_states')],
+        remappings=[
+            (joint_state_gz, '/joint_states'),
+
+            # 공통 인터페이스에 정의된 카메라 토픽
+            ('/rgbd_camera/image', '/camera/image_raw'),
+            ('/rgbd_camera/depth_image', '/camera/depth/image_raw'),
+            ('/rgbd_camera/camera_info', '/camera/camera_info'),
+        ],
         parameters=[{'use_sim_time': True}],
         output='screen',
     )
+
 
     rviz_on = LaunchConfiguration('rviz')
     rviz_gpu = LaunchConfiguration('rviz_gpu')
