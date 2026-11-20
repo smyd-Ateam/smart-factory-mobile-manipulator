@@ -42,7 +42,8 @@
 >   - 재테스트 (2026-11-05, C): RViz CPU 렌더링으로 바꾼 뒤 꺼지지 않고 정상 동작 확인. 화면 없이(`headless:=true`) 실행하면 RTF 평균 약 99% (5회, 98.7~99.7%). WSL 소프트웨어 렌더링에서는 Gazebo 화면이 속도를 가장 많이 잡아먹음
 >   - 카메라 센서를 추가하면 화면을 꺼도 카메라 영상은 렌더링되므로, 카메라 추가 후 RTF 다시 측정 예정 (C)
 > - Windows + WSL2 (B 노트북): MoveIt RViz도 `LIBGL_ALWAYS_SOFTWARE=1`을 붙여서 실행 (예: `LIBGL_ALWAYS_SOFTWARE=1 ros2 launch dofbot_moveit_config demo.launch.py`, 2026-11-03 B 노션 기록)
-> - RGB-D 카메라 렌더링 (B, 2026-11-21, `feat/grasp` 3161f10·b9e8a55): `ogre`에서는 RGB-D 컬러 영상이 회색으로 나오고, `render_engine:=ogre2`로 실행하면 컬러·깊이 모두 정상 (B WSL 환경에서 확인). launch 인자 `render_engine` 기본값은 환경별 선택을 위해 `ogre`로 유지. Mac VM에서 ogre2로 되는지는 A 확인 중
+> - RGB-D 카메라 렌더링 (B, 2026-11-21, `feat/grasp` 3161f10·b9e8a55): `ogre`에서는 RGB-D 컬러 영상이 회색으로 나오고, `render_engine:=ogre2`로 실행하면 컬러·깊이 모두 정상 (B WSL 환경에서 확인). launch 인자 `render_engine` 기본값은 환경별 선택을 위해 `ogre`로 유지
+> - Mac UTM VM 재시험 (A, 2026-11-21, `feat/grasp` b9e8a55): `render_engine:=ogre2 software_gl:=true headless:=true`로 실행하면 `test_room`·`yolo_test_room` 둘 다 깊이·RGB·YOLO 정상 (부품 깊이 오차 약 3~10 mm, 라이다도 정상). `yolo_test_room.sdf`의 센서 plugin 설정은 아직 `ogre`지만, 실행 인자가 이 설정을 덮어씀 — 인자를 생략하면(기본값 ogre) 두 월드 모두 깊이 100% inf · RGB 회색. 단 ogre2+`software_gl:=true` 조합에서도 로그에 `libEGL warning: Not allowed to force software rendering when API explicitly selects a hardware device`가 뜨고 실제로는 GPU로 렌더링되는 것으로 보이며, RTF 하위 5%가 기존 ogre+software 조합(0.839)보다 낮음(0.68~0.75) — 성능 저하는 확인됐으나 원인은 추정 단계
 > - 공용 launch 파일(`mm_description/launch/sim.launch.py`) 옵션: `software_gl:=true`(CPU 렌더링), `headless:=true`(Gazebo 화면 없이), `rviz:=false`(RViz 끄기), `rviz_gpu:=true`(RViz만 GPU로 그리기, Mac VM용), `render_engine`(기본 ogre)
 >   - Mac UTM VM: `ros2 launch mm_description sim.launch.py software_gl:=true headless:=true rviz_gpu:=true`
 >   - WSL2: `ros2 launch mm_description sim.launch.py software_gl:=true`
@@ -465,6 +466,7 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - Gazebo가 해상도 · FOV로 생성한 값이고, 별도 캘리브레이션은 없다
 - 관측 자세가 바뀌어도 내부 파라미터는 같다
 - 처음 측정(2026-11-15)은 일반 RGB 카메라 `arm_rgb_test`(10 Hz) 기준. 2026-11-21 B가 이 카메라를 삭제하고 RGB-D 카메라(`rgbd_camera`, 30 Hz) 하나로 정리함 (2.4). 두 센서의 해상도(640×480) · 수평 FOV(1.047 rad) · 장착 pose 설정이 같아서 내부 파라미터도 같을 것으로 보지만, `rgbd_camera` 기준 `/camera/camera_info` 실측 재확인은 아직
+- 실제 발행 주기 실측 (A, 2026-11-21, Mac VM, `render_engine:=ogre2 software_gl:=true headless:=true`, 30 s): 설정값 30 Hz와 달리 `/camera/image_raw` 약 24.5 Hz, `/camera/depth/image_raw` 약 21.8 Hz, `/camera/camera_info` 약 28 Hz로 측정됨. CPU(소프트웨어) 렌더링 부하 때문으로 추정 — 다른 환경에서도 실측 권장
 
 ---
 
@@ -554,3 +556,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-19 | v0.21 | 3장 `/task_manager/state` QoS depth 10→17 비고 수정 (재정렬 최대 + 취소 경로 최대 12개 + 여유 5, 구독 측도 17 이상 권장. 버전 유지) | A |
 | 2026-11-19 | v0.22 | 3장 · 3.3 `/perception/target_pose` 최소 발행 주기 5 Hz → 3 Hz: D 정렬 모의 시험(3 Hz 15/15, 1.5 Hz 7/15, 1 Hz 3/15), C OpenVINO 적용 후 평균 약 4.4 Hz · 최소 3.8 Hz로 충족 (PR #3 댓글, 2026-11-19). 이전 5 Hz는 C의 Gazebo 연동 전 추론 시간 기준값(2026-11-09). 6장 체크리스트 갱신 | A |
 | 2026-11-21 | v0.22 | B 통합 모델 RGB-D 카메라 연결 반영: bridge로 3장 `/camera/*` 토픽 연결, 일반 RGB 카메라 `arm_rgb_test` 삭제(2.4, 3장), 카메라 주기 10 Hz → 30 Hz와 내부 파라미터 비고(5.7), 깊이 32FC1 B 확인(1.1, 5.6), RGB-D는 `render_engine:=ogre2` 필요(B WSL 확인, 0장). 토픽 이름 · 메시지 타입 · 프레임은 그대로라 버전 유지 (PR #3 댓글, 2026-11-21) | A |
+| 2026-11-21 | v0.22 | Mac VM 깊이 카메라 재시험 반영(0장): `render_engine:=ogre2 software_gl:=true headless:=true`면 이 VM도 `test_room`·`yolo_test_room` 둘 다 깊이·RGB·YOLO 정상(실행 인자가 SDF 센서 설정을 덮어씀), 기본값 ogre는 여전히 비정상, RTF 저하 트레이드오프 명시. 5.7 카메라 실제 발행 주기 실측치(RGB 약 24.5 Hz · 깊이 약 21.8 Hz · camera_info 약 28 Hz, 설정값 30 Hz보다 낮음) 추가. 토픽 이름 · 메시지 타입 · 프레임은 그대로라 버전 유지 | A |
