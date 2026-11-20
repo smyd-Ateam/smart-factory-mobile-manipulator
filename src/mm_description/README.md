@@ -41,7 +41,7 @@ WSL2 환경에서는 Gazebo를 headless로 실행하고 RViz를 별도로 실행
 ```bash
 ros2 launch mm_description sim.launch.py \
   software_gl:=true \
-  render_engine:=ogre \
+  render_engine:=ogre2 \
   headless:=true \
   rviz:=false
 ```
@@ -51,7 +51,7 @@ ros2 launch mm_description sim.launch.py \
 - 차체 및 DOFBOT 로봇팔 통합 모델
 - 차동구동 차체 및 LiDAR
 - 로봇팔 joint1~joint5 위치 제어기
-- RGB 카메라 및 CameraInfo
+- RGB-D 카메라 (RGB·Depth·CameraInfo)
 - Robot State Publisher
 - ROS-Gazebo Bridge
 
@@ -216,24 +216,25 @@ Near 자세에서는 정렬 과정 동안 로봇팔 자세를 고정하고 물�
 
 ## 카메라 인터페이스
 
-`docs/interfaces.md`에 맞춰 RGB 이미지 및 CameraInfo를 발행한다.
+`docs/interfaces.md`에 맞춰 RGB·Depth·CameraInfo를 발행한다.
 
 카메라는 로봇팔 `link4`에 연결된 `DaBai_DCW2_Link`에 장착되어 있다.
 
 | 항목 | 설정 |
 | --- | --- |
-| RGB 이미지 | `/camera/image_raw` |
+| RGB 이미지 | `/camera/image_raw` (`rgb8`) |
+| Depth 이미지 | `/camera/depth/image_raw` (`32FC1`, m) |
 | CameraInfo | `/camera/camera_info` |
 | Image frame_id | `camera_optical_frame` |
 | CameraInfo frame_id | `camera_optical_frame` |
 | 해상도 | 640 × 480 |
-| 업데이트 설정 | 10 Hz |
+| RGB-D 센서 업데이트 설정 | 30 Hz |
 | 수평 FOV | 1.047 rad (약 60°) |
 | 수직 FOV | 약 46.8° |
 | Near clip | 0.05 m |
 | Far clip | 10.0 m |
 
-카메라 브리지는 `sim.launch.py`에 포함되어 있으므로 별도로 실행할 필요가 없다.
+RGB-D 카메라의 RGB·Depth·CameraInfo는 `sim.launch.py`에서 공통 ROS 2 토픽으로 자동 연결된다. 수동 Bridge 실행은 필요하지 않다.
 
 ### 카메라 토픽 확인
 
@@ -340,7 +341,7 @@ RPY (rad): (0, 0, -1.5708)
 | 중심 위치 (World) | (0.8, 0, 0.015) m |
 | Static | true |
 
-기존 RGB 카메라를 이용해 해당 정육면체를 관측하는 데 성공했다.
+RGB-D 카메라 영상에서 초록색 정육면체를 검출하고 해당 영역의 Depth 약 0.603m를 확인했다.
 
 ### YOLO 부품 모델 활용
 
@@ -372,11 +373,12 @@ export IGN_GAZEBO_RESOURCE_PATH="/path/to/models:${IGN_GAZEBO_RESOURCE_PATH}"
 
 ### 카메라 영상 녹화
 
-객체 인식 시험용 RGB 이미지 및 CameraInfo를 녹화할 수 있다.
+객체 인식 시험용 RGB·Depth·CameraInfo를 녹화할 수 있다.
 
 ```bash
 ros2 bag record \
   /camera/image_raw \
+  /camera/depth/image_raw \
   /camera/camera_info \
   -o arm_camera_test
 ```
@@ -386,8 +388,8 @@ ros2 bag record \
 ## 주의사항
 
 - Gazebo 서버가 중복 실행되면 관절 제어 및 카메라 출력에 문제가 발생할 수 있다. 기존 시뮬레이션을 종료한 후 재실행한다.
-- 일반 RGB 카메라 영상 및 CameraInfo는 정상적으로 전달된다. 기존 RGB-D 센서의 RGB 영상은 회색으로 출력되며, 원인은 아직 확인되지 않았다.
-- Depth 정보는 아직 검증하지 않았다. 필요시 일반 RGB 센서와 Depth 센서를 동일한 위치 및 방향에 별도로 구성하는 방식을 검토한다.
+- WSL 환경에서 `render_engine:=ogre2` 적용 후 RGB-D 컬러 영상 정상 출력을 확인했다.
+- RGB 영상의 초록색 영역에서 Depth 약 0.603m를 확인했다. 정밀 거리 오차 및 프레임 동기화는 추가 검증이 필요하다.
 - Image 및 CameraInfo의 frame_id는 `camera_optical_frame`으로 설정했으나, 실제 영상과 TF의 투영 정합은 추가 검증이 필요하다.
 - 현재 그리퍼는 관측 시험을 위해 고정되어 있다.
 - 현재 테스트용 정육면체는 static 모델이므로 실제 파지 물리 시험에는 동적 물체 모델이 필요하다.
@@ -400,7 +402,7 @@ ros2 bag record \
 | --- | --- |
 | `urdf/mm_base.urdf.xacro` | 차동구동 차체 및 LiDAR |
 | `urdf/mm_robot.urdf.xacro` | 차체·DOFBOT 통합 모델 및 관절 제어기 |
-| `urdf/mm_camera.gazebo.xacro` | RGB 및 RGB-D 카메라 설정 |
+| `urdf/mm_camera.gazebo.xacro` | RGB-D 카메라 설정 |
 | `launch/sim.launch.py` | Gazebo 및 ROS-Gazebo Bridge 실행 |
 | `scripts/set_observe_pose_far.sh` | Far 관측 자세 명령 |
 | `worlds/test_room.sdf` | 테스트 월드 및 관측 물체 |
@@ -513,10 +515,11 @@ LIBGL_ALWAYS_SOFTWARE=1 ign gazebo -g
 ### Camera Interface
 
 - RGB Image: `/camera/image_raw`
+- Depth Image: `/camera/depth/image_raw` (`32FC1`, m)
 - CameraInfo: `/camera/camera_info`
 - Frame ID: `camera_optical_frame`
 - Resolution: 640 × 480
-- RGB Update Rate: 10 Hz (시뮬레이션 설정값)
+- RGB-D Update Rate: 30 Hz (센서 설정값)
 
 Far 자세에서 부품 4종이 카메라 영상에 들어오는 것을 확인하였다.
 
@@ -526,5 +529,5 @@ Far 자세에서 부품 4종이 카메라 영상에 들어오는 것을 확인�
 - 현재 관절 위치 명령 방식은 충돌 회피 경로를 고려하지 않음.
 - 추후 MoveIt2를 활용한 충돌 회피 경로 계획 및 목표 자세 도달 확인 로직을 구현할 예정임.
 - Grasp 자세는 물체 위치에 대한 도달 후보 자세이며, 실제 그리퍼 개폐 및 파지는 추가 구현이 필요함.
-- YOLO 검출 성능, Depth 카메라 및 카메라 TF 투영 정확도는 추가 검증 예정임.
+- YOLO 검출 성능, RGB·Depth 동기화 및 카메라 TF 투영 정확도는 추가 검증 예정임.
 - 현재 YOLO 테스트 월드의 부품들은 관측 실험을 위해 static 모델로 설정함.
