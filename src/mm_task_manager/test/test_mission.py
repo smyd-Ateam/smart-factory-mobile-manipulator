@@ -30,6 +30,8 @@ def test_defaults():
     assert m.grasp_timeout_code == 'UNKNOWN'
     assert m.ready_min_wait_sec == 1.0
     assert m.final_zero_sec == 1.0
+    assert m.target_pose_max_x_m == 2.0      # C 제안 1차값 (PR #1 2026-11-20)
+    assert m.target_pose_max_jump_m == 0.1
     assert warnings == []
 
 
@@ -84,7 +86,7 @@ def test_repeated_standoff_warns():
     'ready_timeout_sec', 'tf_max_age_sec', 'nav_timeout_sec', 'cancel_timeout_sec',
     'arrival_xy_tol', 'arrival_yaw_tol', 'cmd_rate_hz', 'cmd_input_timeout_sec',
     'clock_watchdog_sec', 'align_timeout_sec', 'grasp_timeout_sec', 'target_pose_max_age_sec',
-    'pregrasp_switch_distance_m',
+    'pregrasp_switch_distance_m', 'target_pose_max_x_m', 'target_pose_max_jump_m',
 ])
 def test_positive_values(key):
     with pytest.raises(ValueError, match=key):
@@ -97,7 +99,7 @@ POSITIVE_KEYS = [
     'ready_timeout_sec', 'nav_timeout_sec', 'align_timeout_sec', 'grasp_timeout_sec',
     'cancel_timeout_sec', 'clock_watchdog_sec', 'target_pose_max_age_sec', 'arrival_xy_tol',
     'arrival_yaw_tol', 'cmd_rate_hz', 'cmd_input_timeout_sec', 'tf_max_age_sec',
-    'pregrasp_switch_distance_m',
+    'pregrasp_switch_distance_m', 'target_pose_max_x_m', 'target_pose_max_jump_m',
 ]
 
 

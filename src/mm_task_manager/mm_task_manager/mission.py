@@ -47,6 +47,10 @@ class Mission:
     grasp_timeout_sec: float = 60.0       # TODO(B)
     grasp_timeout_code: str = codes.UNKNOWN            # TODO(B)
     target_pose_max_age_sec: float = 1.0  # TODO(C, B)
+    # target_pose 안전장치 (C 제안, PR #1 2026-11-20). 상한은 희선님 Far 관측 범위 최대 2.0 m 기준 1차값,
+    # 원준님 실제 검출 가능 거리 측정 후 조정. 점프는 직전에 통과한 x 대비
+    target_pose_max_x_m: float = 2.0
+    target_pose_max_jump_m: float = 0.1
 
     max_realign: int = 2
     # 0.25는 B 제안 초기 시험값, 0.22 · 0.28은 TODO(B) 임시 자리값
@@ -80,12 +84,14 @@ _FLOAT_FIELDS = ('goal_x', 'goal_y', 'goal_yaw', 'object_x', 'object_y', 'nav_st
                  'nav_timeout_sec', 'cancel_timeout_sec', 'settle_sec', 'arrival_xy_tol',
                  'arrival_yaw_tol', 'cmd_rate_hz', 'cmd_input_timeout_sec',
                  'clock_watchdog_sec', 'align_timeout_sec', 'align_margin_sec',
-                 'grasp_timeout_sec', 'target_pose_max_age_sec', 'pregrasp_switch_distance_m')
+                 'grasp_timeout_sec', 'target_pose_max_age_sec', 'pregrasp_switch_distance_m',
+                 'target_pose_max_x_m', 'target_pose_max_jump_m')
 
 _POSITIVE_FIELDS = ('ready_timeout_sec', 'tf_max_age_sec', 'nav_timeout_sec',
                     'cancel_timeout_sec', 'arrival_xy_tol', 'arrival_yaw_tol', 'cmd_rate_hz',
                     'cmd_input_timeout_sec', 'clock_watchdog_sec', 'align_timeout_sec',
-                    'grasp_timeout_sec', 'target_pose_max_age_sec', 'pregrasp_switch_distance_m')
+                    'grasp_timeout_sec', 'target_pose_max_age_sec', 'pregrasp_switch_distance_m',
+                    'target_pose_max_x_m', 'target_pose_max_jump_m')
 
 _NON_NEGATIVE_FIELDS = ('settle_sec', 'align_margin_sec', 'ready_min_wait_sec', 'final_zero_sec',
                         'nav_standoff_margin_m')

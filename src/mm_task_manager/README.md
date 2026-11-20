@@ -93,6 +93,7 @@ mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF
 - 정렬 결과를 `align_timeout_sec` + `align_margin_sec` 안에 못 받으면 취소하고 `ALIGN_TIMEOUT` (4.1). 파지는 `grasp_timeout_sec`(임시 60 s)
 - Grasp 목표의 `target_pose`: 정렬이 끝난 직후 바로 보내지 않고, 정렬 뒤 찍힌(stamp ≥ 정렬 완료 시각) 값 중 stamp 기준 `target_pose_max_age_sec`(1.0 s) 이내 값이 오면 그 값으로 보낸다. 1.0 s 안에 안 오면 `OBJECT_NOT_FOUND` / `target_pose_stale` (interfaces.md 3.3 미검출 규칙, `target_pose.py`). 기다리는 방식은 B 확인 전 구현 메모
 - `/perception/target_pose` 안전장치 (C 제안, PR #1 댓글 2026-11-18): `frame_id`가 `base_link`가 아니거나, x · y · z에 NaN · inf가 있거나, x ≤ 0(차체 뒤쪽)인 메시지는 받자마자 무시한다. Grasp 목표 후보에도, Near→Pre-grasp 전환 거리 판단에도 쓰지 않고 경고 로그만 남긴다 (5 s에 한 번, `target_pose.is_valid_target_pose`)
+  - 추가 (C 제안, PR #1 댓글 2026-11-20): x가 `target_pose_max_x_m`(기본 2.0 m, 희선님 Far 관측 범위 기준 1차값, 원준님 실측 후 조정)보다 크거나, 직전에 통과한 x 대비 `target_pose_max_jump_m`(기본 0.1 m) 이상 튀면(양방향) 거른다. 직전 값이 없으면(첫 메시지) 점프는 안 본다. 걸러진 메시지는 직전 값을 바꾸지 않는다. 경고 로그에 걸린 필터 이름(`frame_id`, `non_finite`, `x_not_positive`, `x_above_max`, `x_jump`)을 남긴다 (`target_pose.TargetPoseFilter`)
 - 정렬 · 파지 서버가 목표를 거부하면 `UNKNOWN` / `rejected`
 
 - 취소 요청이 거부(REJECTED)되면 취소 완료로 보지 않고 `cancel_timeout_sec`까지 기다린다 (목표가 계속 돌 수 있으므로). rclpy(Humble) 서버는 거부해도 `return_code`를 0(`ERROR_NONE`)으로 두고 `goals_canceling`에서만 빼므로, `return_code`가 0이어도 `goals_canceling`이 비어 있으면 거부로 본다 (S25).

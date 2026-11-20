@@ -42,6 +42,8 @@ task_manager:
     grasp_timeout_sec: 60.0                 # Grasp 제한 시간 (B 확인)
     grasp_timeout_code: UNKNOWN             # TODO(B): Grasp 시간 초과 코드
     target_pose_max_age_sec: 1.0            # target_pose 신선도 기준 (C 확인)
+    target_pose_max_x_m: 2.0                # target_pose x 상한 (C 제안 1차값, 실측 후 조정)
+    target_pose_max_jump_m: 0.1             # 직전에 통과한 target_pose x 대비 이만큼 이상 튀면 거름 (C 제안)
 
     # 재정렬 (interfaces.md 5.2)
     max_realign: 2
