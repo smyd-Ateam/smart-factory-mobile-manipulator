@@ -49,6 +49,13 @@ MIN_SEPARATION = 0.09    # 물체끼리 최소 거리 (m)
 # 카메라 무작위 범위 (far 자세 ~ near 자세를 모두 덮도록)
 PITCH_DEG = (20.0, 70.0)   # 아래로 숙인 각도
 DIST_M = (0.25, 1.2)       # 카메라 → 바라보는 바닥 점까지 거리
+# --topdown: Pre-grasp 자세처럼 거의 바로 위에서 가까이 내려다보는 장면 (숙임각 약 83~84°)
+TOPDOWN_PITCH_DEG = (70.0, 90.0)
+TOPDOWN_DIST_M = (0.15, 0.45)
+# --close: Near(0.35~0.40 m) ~ Pre-grasp(83°) 근거리 구간. 서 있는 자세를 더 자주 만든다
+CLOSE_PITCH_DEG = (45.0, 90.0)
+CLOSE_DIST_M = (0.15, 0.55)
+STAND_BIAS_CLOSE = 0.7     # 서 있는 자세(roll=pitch=0) 확률
 ROLL_RAD = 0.08            # 약간의 기울어짐
 
 
@@ -69,10 +76,10 @@ def rpy_to_quat(roll, pitch, yaw):
 # ---------------------------------------------------------------------------
 # 장면 무작위 생성
 # ---------------------------------------------------------------------------
-def sample_scene(rng):
+def sample_scene(rng, pitch_deg=PITCH_DEG, dist_m=DIST_M, stand_bias=None):
     """카메라 1개 + 모든 물체의 자세를 정한다. 쓰지 않는 물체는 멀리 대기시킨다."""
-    pitch = math.radians(rng.uniform(*PITCH_DEG))
-    dist = DIST_M[0] + (DIST_M[1] - DIST_M[0]) * rng.random() ** 1.5   # 가까운 쪽에 더 많이
+    pitch = math.radians(rng.uniform(*pitch_deg))
+    dist = dist_m[0] + (dist_m[1] - dist_m[0]) * rng.random() ** 1.5   # 가까운 쪽에 더 많이
     yaw = rng.uniform(-math.pi, math.pi)
     roll = rng.uniform(-ROLL_RAD, ROLL_RAD)
     tx, ty = rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0)   # 바라보는 바닥 점
@@ -118,7 +125,12 @@ def sample_scene(rng):
         else:
             cls = name.rsplit("_", 1)[0]
             opts = REST_POSES[cls]
-            r, p, z, _ = rng.choices(opts, weights=[o[3] for o in opts])[0]
+            if stand_bias is None:
+                r, p, z, _ = rng.choices(opts, weights=[o[3] for o in opts])[0]
+            elif rng.random() < stand_bias:
+                r, p, z, _ = opts[0]                       # 서 있는 자세
+            else:
+                r, p, z, _ = rng.choice(opts[1:] or opts)  # 누운 자세
             poses[name] = (x, y, base_z + z + DROP_MARGIN, r, p, oyaw)
 
     # 나머지는 대기 위치로
@@ -146,14 +158,19 @@ def sample_scene(rng):
 # ---------------------------------------------------------------------------
 # Gazebo 명령 (ign CLI 사용)
 # ---------------------------------------------------------------------------
-def ign_service(service, reqtype, req, timeout_ms=3000):
+def ign_service(service, reqtype, req, timeout_ms=10000, retries=3):
+    """Gazebo가 바쁠 때 응답이 늦을 수 있어서 넉넉히 기다리고, 실패하면 다시 시도한다."""
     cmd = ["ign", "service", "-s", service, "--reqtype", reqtype,
            "--reptype", "ignition.msgs.Boolean", "--timeout", str(timeout_ms), "--req", req]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_ms / 1000 + 5)
-    except subprocess.TimeoutExpired:
-        return False
-    return "data: true" in r.stdout
+    for attempt in range(retries):
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_ms / 1000 + 5)
+            if "data: true" in r.stdout:
+                return True
+        except subprocess.TimeoutExpired:
+            pass
+        time.sleep(0.5 * (attempt + 1))
+    return False
 
 
 def set_poses(poses):
@@ -305,7 +322,18 @@ def main():
     ap.add_argument("--val-ratio", type=float, default=0.1)
     ap.add_argument("--settle", type=float, default=0.4, help="물체를 옮긴 뒤 기다리는 시간 (s)")
     ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--topdown", action="store_true",
+                    help="위에서 가까이 내려다보는 장면만 수집 (숙임각 70~90°, 거리 0.15~0.45 m)")
+    ap.add_argument("--close", action="store_true",
+                    help="근거리(Near~Pre-grasp) 장면 수집 (숙임각 45~90°, 거리 0.15~0.55 m, 서 있는 자세 70%%)")
     args = ap.parse_args()
+    stand_bias = None
+    if args.close:
+        pitch_deg, dist_m, stand_bias = CLOSE_PITCH_DEG, CLOSE_DIST_M, STAND_BIAS_CLOSE
+    elif args.topdown:
+        pitch_deg, dist_m = TOPDOWN_PITCH_DEG, TOPDOWN_DIST_M
+    else:
+        pitch_deg, dist_m = PITCH_DEG, DIST_M
 
     import cv2
 
@@ -335,17 +363,22 @@ def main():
 
     counts = collections.Counter()
     saved, fails, t_start = 0, 0, time.time()
+    streak = 0                # 연속 실패 횟수
     light_warned = False
     idx = start
     while saved < args.num:
-        poses, light, info = sample_scene(rng)
+        poses, light, info = sample_scene(rng, pitch_deg, dist_m, stand_bias)
         t_ref = node.latest_stamp() or 0.0
         if not set_poses(poses):
             fails += 1
-            print("[경고] set_pose 실패 (%d회)" % fails)
-            if fails > 20:
-                sys.exit("[오류] set_pose가 계속 실패합니다. 월드 이름(collect)과 Gazebo 실행 상태를 확인하세요.")
+            streak += 1
+            print("[경고] set_pose 실패 (연속 %d회, 누적 %d회) — 다시 시도합니다" % (streak, fails))
+            if streak >= 10:
+                sys.exit("[오류] set_pose가 연속 10회 실패했습니다. Gazebo가 멈췄는지 logs/gazebo.log를 확인하세요.\n"
+                         "        같은 명령을 다시 실행하면 이어서 모읍니다.")
+            time.sleep(2.0)   # Gazebo가 숨 돌릴 시간
             continue
+        streak = 0
         if not set_light(light) and not light_warned:   # 실패해도 계속 진행 (조명만 안 바뀜)
             print("[경고] 조명 변경이 안 됩니다. 기본 조명으로 계속 수집합니다.")
             light_warned = True
@@ -359,14 +392,21 @@ def main():
             res = None
         if res is None:
             fails += 1
-            print("[경고] /boxes를 못 받았습니다 (%d회)" % fails)
+            streak += 1
+            print("[경고] /boxes를 못 받았습니다 (연속 %d회)" % streak)
+            if streak >= 15:
+                sys.exit("[오류] 연속 15번 실패했습니다. logs/gazebo.log를 확인하세요. 다시 실행하면 이어서 모읍니다.")
             continue
         stamp, boxes = res
         msg = node.find(stamp)
         if msg is None:
             fails += 1
-            print("[경고] 박스와 같은 시각의 이미지를 못 찾았습니다 (%d회)" % fails)
+            streak += 1
+            print("[경고] 박스와 같은 시각의 이미지를 못 찾았습니다 (연속 %d회)" % streak)
+            if streak >= 15:
+                sys.exit("[오류] 연속 15번 실패했습니다. 다시 실행하면 이어서 모읍니다.")
             continue
+        streak = 0
 
         split = "val" if random.Random(idx).random() < args.val_ratio else "train"
         name = "%06d" % idx

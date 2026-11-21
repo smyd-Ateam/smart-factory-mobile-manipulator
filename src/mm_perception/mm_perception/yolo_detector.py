@@ -11,6 +11,10 @@
 
 패키지로 빌드하지 않고 바로 실행할 수도 있다:
     python3 yolo_detector.py --ros-args -p model:=$HOME/yolo_models/synth_v1_640.pt -p use_sim_time:=true
+
+OpenVINO 모델에서 정밀도/추가 설정이 필요할 때 (예: ARM Mac VM):
+    ... -p model:=$HOME/yolo_models/synth_v2_640_openvino_model -p ov_precision:=f32
+    ... -p ov_config:="NUM_STREAMS=1,INFERENCE_NUM_THREADS=4"
 """
 import collections
 import os
@@ -63,6 +67,48 @@ def result_to_dets(result, names, conf_min):
         dets.append((name, float(s), float(x0), float(y0), float(x1), float(y1)))
     dets.sort(key=lambda d: -d[1])
     return dets
+
+
+def parse_ov_config(precision="", extra=""):
+    """노드 파라미터 → OpenVINO compile_model config dict.
+
+    precision: "" (기본값 그대로), "f32", "f16", "bf16" → INFERENCE_PRECISION_HINT
+    extra    : "KEY=VAL,KEY2=VAL2" 형식의 추가 설정 (예: "NUM_STREAMS=1,INFERENCE_NUM_THREADS=4")
+    """
+    cfg = {}
+    if precision:
+        cfg["INFERENCE_PRECISION_HINT"] = precision.strip().lower()
+    for item in (extra or "").split(","):
+        if "=" in item:
+            k, v = item.split("=", 1)
+            if k.strip():
+                cfg[k.strip()] = v.strip()
+    return cfg
+
+
+def apply_openvino_config(core_cls, cfg):
+    """OpenVINO Core.compile_model에 cfg를 합쳐 넣는다.
+
+    ultralytics가 모델을 불러올 때 compile_model을 직접 호출해서 밖에서 설정을 넘길 수 없으므로,
+    호출 직전에 config를 덧붙이도록 감싼다. cfg가 비어 있으면 아무것도 바꾸지 않는다.
+    """
+    if not cfg or getattr(core_cls.compile_model, "_mm_patched", False):
+        return False
+    orig = core_cls.compile_model
+
+    def compile_model(self, model, *args, **kwargs):
+        args = list(args)
+        if "config" in kwargs:
+            kwargs["config"] = {**(kwargs["config"] or {}), **cfg}
+        elif len(args) >= 2:                       # (device_name, config, ...)
+            args[1] = {**(args[1] or {}), **cfg}
+        else:
+            kwargs["config"] = dict(cfg)
+        return orig(self, model, *args, **kwargs)
+
+    compile_model._mm_patched = True
+    core_cls.compile_model = compile_model
+    return True
 
 
 def draw_dets(bgr, dets, info=""):
@@ -125,9 +171,19 @@ def main(args=None):
             self.pub_image = bool(p("publish_image", True).value)
             self.save_dir = os.path.expanduser(str(p("save_dir", "").value))
             self.save_every = max(1, int(p("save_every", 10).value))
+            ov_precision = str(p("ov_precision", "").value)   # OpenVINO 모델일 때만: "", f32, f16, bf16
+            ov_config = str(p("ov_config", "").value)         # 추가 설정 "KEY=VAL,KEY2=VAL2"
 
             if not os.path.exists(self.model_path):
                 raise SystemExit("[오류] 모델 파일이 없습니다: %s" % self.model_path)
+            if "openvino" in os.path.basename(self.model_path.rstrip("/")):
+                cfg = parse_ov_config(ov_precision, ov_config)
+                if cfg:
+                    import openvino as ov
+                    apply_openvino_config(ov.Core, cfg)
+                    self.get_logger().info("OpenVINO 설정: %s" % cfg)
+            elif ov_precision or ov_config:
+                self.get_logger().warn("ov_precision/ov_config는 OpenVINO 모델(_openvino_model 폴더)일 때만 적용됩니다")
             self.model = YOLO(self.model_path)
             self.names = self.model.names
             unknown = [n for n in self.names.values() if n not in CLASSES]
@@ -152,7 +208,9 @@ def main(args=None):
             self.t_last_log = time.time()
             self.n_proc = 0
             self.n_at_log = 0
-            threading.Thread(target=self.worker, daemon=True).start()
+            self.stop = threading.Event()
+            self.thread = threading.Thread(target=self.worker, daemon=True)
+            self.thread.start()
 
             self.get_logger().info(
                 "시작: model=%s imgsz=%d conf=%.2f device=%s | 구독 %s → 발행 /perception/detections"
@@ -166,7 +224,7 @@ def main(args=None):
             self.stats["received"] += 1
 
         def worker(self):
-            while rclpy.ok():
+            while rclpy.ok() and not self.stop.is_set():
                 with self.lock:
                     msg, self.latest = self.latest, None
                 if msg is None:
@@ -175,7 +233,8 @@ def main(args=None):
                 try:
                     self.process(msg)
                 except Exception as e:   # 한 프레임 오류로 노드가 죽지 않게
-                    self.get_logger().error("처리 실패: %s" % e)
+                    if not self.stop.is_set():
+                        self.get_logger().error("처리 실패: %s" % e)
 
         def process(self, msg):
             bgr = image_msg_to_bgr(msg)
@@ -226,6 +285,8 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
+        node.stop.set()
+        node.thread.join(timeout=2.0)   # 처리 중인 프레임을 마치고 끝내기
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

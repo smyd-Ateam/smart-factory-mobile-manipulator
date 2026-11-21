@@ -5,7 +5,7 @@
 #   3) collect_data.py
 # 끝나거나 Ctrl+C를 누르면 Gazebo와 브리지도 같이 종료된다.
 #
-# 사용법: bash tools/run_collect.sh [장수=200] [저장 폴더=~/yolo_dataset]
+# 사용법: bash tools/run_collect.sh [장수=200] [저장 폴더=~/yolo_dataset] [추가 옵션, 예: --topdown]
 set -e
 cd "$(dirname "$0")/.."
 
@@ -37,4 +37,4 @@ trap cleanup EXIT
 
 sleep 8
 echo "[3/3] 수집 시작: ${NUM}장 → $OUT"
-python3 tools/collect_data.py --num "$NUM" --out "$OUT"
+python3 tools/collect_data.py --num "$NUM" --out "$OUT" "${@:3}"
