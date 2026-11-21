@@ -7,7 +7,7 @@ set -e
 
 "$(dirname "${BASH_SOURCE[0]}")/safe_joint_cmd.sh" 3 "-0.959445"
 
-"$(dirname "${BASH_SOURCE[0]}")/safe_joint_cmd.sh" 4 "-1.435083"
+"$(dirname "${BASH_SOURCE[0]}")/safe_joint_cmd.sh" 4 "-1.190737"
 
 "$(dirname "${BASH_SOURCE[0]}")/safe_joint_cmd.sh" 5 "-0.000157"
 
