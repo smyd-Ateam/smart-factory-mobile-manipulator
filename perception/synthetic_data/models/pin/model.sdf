@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<!-- pin: YOLO class id 1 (Gazebo label 2). 원점 = 바닥 중심, 단위 m -->
+<sdf version="1.8">
+  <model name="pin">
+    <link name="link">
+      <inertial>
+        <pose>0 0 0.025 0 0 0</pose>
+        <mass>0.02</mass>
+        <inertia><ixx>4.667e-06</ixx><ixy>0</ixy><ixz>0</ixz><iyy>4.667e-06</iyy><iyz>0</iyz><izz>1e-06</izz></inertia>
+      </inertial>
+      <collision name="collision"><pose>0 0 0.025 0 0 0</pose><geometry><cylinder><radius>0.01</radius><length>0.05</length></cylinder></geometry></collision>
+      <visual name="visual">
+        <pose>0 0 0.025 0 0 0</pose><geometry><cylinder><radius>0.01</radius><length>0.05</length></cylinder></geometry>
+        <material>
+          <ambient>0.80 0.80 0.82 1</ambient>
+          <diffuse>0.80 0.80 0.82 1</diffuse>
+          <specular>0.3 0.3 0.3 1</specular>
+        </material>
+      </visual>
+    </link>
+    <!-- boundingbox camera가 이 번호로 박스를 만든다 (0은 배경이라 1부터 사용) -->
+    <plugin filename="ignition-gazebo-label-system" name="ignition::gazebo::systems::Label">
+      <label>2</label>
+    </plugin>
+  </model>
+</sdf>
