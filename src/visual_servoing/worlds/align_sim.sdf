@@ -5,7 +5,8 @@
   - mm_test_base: 정렬 시험용 단순 차체. base_link = 모델 원점 (바닥에서 0.05 m, mm_description과 같음)
       바퀴 물리 없이 VelocityControl로 cmd_vel을 그대로 속도로 쓴다 (미끄러짐 없음).
       카메라: RGB-D + boundingbox 카메라를 같은 자리에 둔다.
-      장착 위치는 임시값 (mock_model.CameraMount와 같음, B의 near 자세가 정해지면 교체).
+      아래 pose는 sim_model.CAMERA_POSES['test'] 값이고, sim_align.launch.py가
+      camera_pose 인자(near, pregrasp)에 맞게 바꿔서 띄운다. 이 문자열은 그대로 둘 것.
   - pin: 정렬 대상. feat/yolo의 perception/synthetic_data/models/pin과 같은 모양·label(2)
 -->
 <sdf version="1.8">
@@ -95,7 +96,7 @@
         </visual>
 
         <sensor name="rgbd" type="rgbd_camera">
-          <pose>0.10 0 0.25 0 0.75 0</pose>
+          <pose>0.1000 0 0.2500 0 0.7500 0</pose>
           <topic>sim_camera</topic>
           <ignition_frame_id>camera_optical_frame</ignition_frame_id>
           <always_on>true</always_on>
@@ -107,7 +108,7 @@
           </camera>
         </sensor>
         <sensor name="bbox" type="boundingbox_camera">
-          <pose>0.10 0 0.25 0 0.75 0</pose>
+          <pose>0.1000 0 0.2500 0 0.7500 0</pose>
           <topic>sim_boxes</topic>
           <ignition_frame_id>camera_optical_frame</ignition_frame_id>
           <always_on>true</always_on>

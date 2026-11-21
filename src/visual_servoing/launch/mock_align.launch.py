@@ -51,9 +51,9 @@ def generate_launch_description():
             'noise_depth': f('noise_depth'),
         }],
     )
-    # 모의 깊이는 물체 중심까지라 앞면 → 중심 보정을 끈다
+    # 모의 깊이는 물체 중심까지라 표면 → 중심축 보정을 끈다 (반지름 0)
     align = Node(package='visual_servoing', executable='align_node', output='screen',
-                 parameters=[{'center_offsets': [f'{c}:0.0' for c in LABEL_TO_CLASS.values()]}])
+                 parameters=[{'object_shapes': [f'{c}:0.0:1.0' for c in LABEL_TO_CLASS.values()]}])
     rviz = Node(
         package='rviz2', executable='rviz2', output='log',
         arguments=['-d', os.path.join(get_package_share_directory('visual_servoing'),

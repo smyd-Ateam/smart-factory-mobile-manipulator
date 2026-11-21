@@ -27,15 +27,21 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from vision_msgs.msg import Detection2DArray
 
 from visual_servoing.control import ControlParams
-from visual_servoing.geometry import (decode_depth, depth_at, parse_center_offsets,
-                                      pixel_to_camera, surface_to_center, transform_point)
+from visual_servoing.geometry import decode_depth, depth_at, pixel_to_camera, transform_point
+from visual_servoing.object_model import Cylinder, axis_from_hit, parse_object_shapes
 from visual_servoing.session import RUNNING, SUCCEEDED, AlignSession, SessionParams
+from visual_servoing.tracking import Candidate, base_bearing, pick_target
 
 
 def stamp_ns(stamp):
     return stamp.sec * 1_000_000_000 + stamp.nanosec
 
-DEFAULT_CENTER_OFFSETS = ['block:0.0125', 'pin:0.010', 'hex_nut:0.015', 'bolt:0.006']
+
+# 클래스:반지름:높이 (m), 세워진 원기둥으로 근사. feat/yolo 부품 치수 기준
+# block 2.5×2.5×4 cm, pin 지름 2 × 5 cm, hex_nut 맞변 3 × 1.5 cm, bolt 몸통 지름 1.2 × 전체 6 cm
+DEFAULT_OBJECT_SHAPES = ['block:0.0125:0.04', 'pin:0.010:0.05',
+                         'hex_nut:0.015:0.015', 'bolt:0.006:0.06']
+NO_SHAPE = Cylinder(0.0, 1.0)   # 모르는 클래스: 잰 점을 그대로 씀
 
 
 class AlignNode(Node):
@@ -49,17 +55,21 @@ class AlignNode(Node):
         self.declare_parameter('depth_sync_tolerance', 0.02)   # s
         self.declare_parameter('control_rate', 20.0)           # Hz
         self.declare_parameter('feedback_rate', 5.0)           # Hz
-        # 깊이는 물체 앞면까지라 중심까지 더할 반폭 (m). feat/yolo 부품 치수 기준
-        self.declare_parameter('center_offsets', DEFAULT_CENTER_OFFSETS)
+        # 깊이로 잰 표면 점 → 물체 중심축 계산용 (object_model.py)
+        self.declare_parameter('object_shapes', DEFAULT_OBJECT_SHAPES)
+        self.declare_parameter('floor_z', -0.05)   # base_link 기준 바닥 높이 (mm_description)
+        # 같은 클래스가 여러 개일 때 직전 박스에서 이만큼(px) 넘게 떨어진 검출로는 갈아타지 않음
+        self.declare_parameter('track_gate_px', 150.0)
         for name, value in vars(ControlParams()).items():
             self.declare_parameter(name, value)
         for name, value in vars(SessionParams()).items():
             self.declare_parameter(name, value)
 
-        self.center_offsets = parse_center_offsets(self.param('center_offsets'))
+        self.object_shapes = parse_object_shapes(self.param('object_shapes'))
         self.depth_cache = deque(maxlen=15)   # (stamp_ns, frame_id, depth 배열)
         self.camera_info = None
         self.pending_detection = None         # 깊이보다 먼저 도착한 검출
+        self.last_uv = None                   # 실행 중인 목표에서 마지막으로 고른 박스 중심 (px)
         self.lock = threading.Lock()
         self.active_target = None             # 실행 중인 목표의 target_class
         self.measurement = None               # (stamp 초, x_b, y_b), base_link 기준
@@ -121,18 +131,30 @@ class AlignNode(Node):
                 best = (diff, depth)
         return None if best is None else best[1]
 
-    def pick_detection(self, msg, target):
+    def pick_detection(self, msg, target, cam_t, cam_q):
+        """목표 클래스 검출 중 따라가던 물체 하나를 고른다 (tracking.pick_target)."""
         score_min = self.param('score_min')
-        best = None
-        for det in msg.detections:
-            if not det.results:
-                continue
-            hyp = det.results[0].hypothesis
-            if hyp.class_id != target or hyp.score < score_min:
-                continue
-            if best is None or hyp.score > best.results[0].hypothesis.score:
-                best = det
-        return best
+        dets = [d for d in msg.detections
+                if d.results and d.results[0].hypothesis.class_id == target
+                and d.results[0].hypothesis.score >= score_min]
+        cands = [Candidate(d.bbox.center.position.x, d.bbox.center.position.y,
+                           d.results[0].hypothesis.score) for d in dets]
+        with self.lock:
+            last_uv = self.last_uv
+        first_cost = []
+        if last_uv is None:   # 첫 프레임: 차체 정면에 가장 가까운 물체
+            k = self.camera_info.k
+            shape = self.object_shapes.get(target, NO_SHAPE)
+            z_mid = self.param('floor_z') + min(shape.height, 1.0) / 2.0
+            first_cost = [abs(base_bearing(c.u, c.v, (k[0], k[4], k[2], k[5]), cam_t, cam_q, z_mid))
+                          for c in cands]
+        i = pick_target(cands, last_uv, self.param('track_gate_px'), first_cost)
+        if i is None:
+            return None
+        with self.lock:
+            if self.active_target == target:
+                self.last_uv = (cands[i].u, cands[i].v)
+        return dets[i]
 
     def on_detections(self, msg, retry=True):
         target = self.active_target
@@ -141,11 +163,22 @@ class AlignNode(Node):
         if self.camera_info is None:
             self.get_logger().warn('camera_info 대기 중', throttle_duration_sec=5.0)
             return
-        det = self.pick_detection(msg, target)
+        t_ns = stamp_ns(msg.header.stamp)
+        frame = msg.header.frame_id or self.camera_info.header.frame_id
+        try:
+            tf = self.tf_buffer.lookup_transform(
+                self.param('base_frame'), frame, Time(nanoseconds=t_ns),
+                timeout=Duration(seconds=0.05))
+        except TransformException as e:
+            self.get_logger().warn(f'TF 실패: {e}', throttle_duration_sec=5.0)
+            return
+        tr, q = tf.transform.translation, tf.transform.rotation
+        cam_t, cam_q = (tr.x, tr.y, tr.z), (q.x, q.y, q.z, q.w)
+
+        det = self.pick_detection(msg, target, cam_t, cam_q)
         if det is None:
             return
 
-        t_ns = stamp_ns(msg.header.stamp)
         depth = self.find_depth(t_ns)
         if depth is None:
             if retry:
@@ -164,17 +197,10 @@ class AlignNode(Node):
 
         k = self.camera_info.k
         p_cam = pixel_to_camera(u, v, z, k[0], k[4], k[2], k[5])
-        frame = msg.header.frame_id or self.camera_info.header.frame_id
-        try:
-            tf = self.tf_buffer.lookup_transform(
-                self.param('base_frame'), frame, Time(nanoseconds=t_ns),
-                timeout=Duration(seconds=0.05))
-        except TransformException as e:
-            self.get_logger().warn(f'TF 실패: {e}', throttle_duration_sec=5.0)
-            return
-        tr, q = tf.transform.translation, tf.transform.rotation
-        x_b, y_b, _ = transform_point(p_cam, (tr.x, tr.y, tr.z), (q.x, q.y, q.z, q.w))
-        x_b, y_b = surface_to_center(x_b, y_b, tr.x, tr.y, self.center_offsets.get(target, 0.0))
+        hit = transform_point(p_cam, cam_t, cam_q)
+        # 깊이는 bbox 중심이 닿은 표면까지라 물체 모양으로 중심축을 구한다 (object_model.py)
+        x_b, y_b = axis_from_hit(hit, self.object_shapes.get(target, NO_SHAPE),
+                                 self.param('floor_z'), cam_t, cam_q, (k[0], k[4], k[2], k[5]))
         with self.lock:
             if self.active_target == target:
                 self.measurement = (t_ns / 1e9, x_b, y_b)
@@ -206,6 +232,7 @@ class AlignNode(Node):
         with self.lock:
             self.active_target = goal.target_class
             self.measurement = None
+            self.last_uv = None
         self.get_logger().info(
             f'정렬 시작: {goal.target_class}, standoff {goal.standoff_m:.3f} m, '
             f'제한 {goal.timeout_sec:.1f} s')
@@ -268,6 +295,7 @@ class AlignNode(Node):
             with self.lock:
                 self.active_target = None
                 self.measurement = None
+                self.last_uv = None
             self.destroy_rate(rate)
             self.idle.set()
 
