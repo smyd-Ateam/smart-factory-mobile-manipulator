@@ -49,6 +49,24 @@ ign topic -e -t /stats -n 3 | grep real_time_factor
 ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.2}, angular: {z: 0.3}}"
 ```
 
+## 차체 치수
+
+PR #4(희선님, 로봇팔 통합용 차체 수정) 기준 값. 바꿀 때는 `urdf/mm_base.urdf.xacro` 위쪽 값을 고친다.
+
+| 항목 | 값 |
+|---|---|
+| 차체 (x × y × z) | 0.38 × 0.28 × 0.06 m, 바닥에서 0.02 m 띄움 |
+| 바퀴 | 반지름 0.05 m, 폭 0.04 m, 간격 0.35 m (충돌 모양은 구) |
+| 캐스터 | 반지름 0.02 m 구, x ±0.15 m, 바닥에서 3 mm 띄움 (`caster_gap` 0.003)[^gap] |
+| 라이다 (`base_scan`) | `base_footprint` 기준 (0.18, 0, 0.125) m = `base_link` 기준 (0.18, 0, 0.075) m |
+| 라이다 사양 | `gpu_lidar` 10 Hz, 360개, 0.12 ~ 8.0 m |
+
+- `base_link`는 바퀴 축 높이(바닥에서 0.05 m), `base_footprint`는 바닥.
+- 캐스터 간극 때문에 차체가 앞 캐스터가 닿을 때까지 앞으로 기운다: 3 mm면 약 0.020 rad.
+- 오도메트리 오차와 캐스터 간극 (scratchpad 시뮬 조사, 2026-11-17, 예전 차체 0.40 × 0.30 × 0.10 m 기준): 회전 · 직진 오차는 간극 0 ~ 3 mm에서 모두 0%로 간극과 무관했다. 예전 회전 오차 13%의 원인은 바퀴 충돌 모양(원통 → 구로 수정)이었다. 지금은 캐스터 마찰이 0이라 간극을 2 mm 이하로 줄여도 오차에는 영향이 없다. 단 캐스터에 마찰이 생기면 0 mm는 위험하다(캐스터가 바닥을 붙잡아 차체가 안 움직이고 바퀴만 헛돎).
+
+[^gap]: 2 mm(앞 기울기 약 0.013 rad)로 줄이는 변경이 `feat/state-machine`(0782f98)에 있으나 아직 승인 안 된 제안값이다.
+
 ## 토픽 · 프레임
 
 자세한 기준은 `docs/interfaces.md` 참고.
@@ -61,7 +79,7 @@ ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.2}, angula
 
 | 파일 | 내용 |
 |---|---|
-| `urdf/mm_base.urdf.xacro` | 차체 모델 (치수는 파일 위쪽에 모여 있음, 임시값) |
+| `urdf/mm_base.urdf.xacro` | 차체 모델 (치수는 파일 위쪽에 모여 있음, 위 차체 치수 표 참고) |
 | `worlds/test_room.sdf` | 6 m × 6 m 테스트 방, 장애물 3개 |
 | `launch/sim.launch.py` | 실행 파일 |
 | `rviz/base.rviz` | RViz 설정 |

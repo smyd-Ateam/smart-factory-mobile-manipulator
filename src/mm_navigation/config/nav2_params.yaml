@@ -200,7 +200,7 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      footprint: "[[0.20, 0.20], [0.20, -0.20], [-0.20, -0.20], [-0.20, 0.20]]"  # 변경: 0.40x0.40 m (팔 올리면 재조정)
+      footprint: "[[0.24, 0.24], [0.24, -0.24], [-0.20, -0.24], [-0.20, 0.24]]"  # 변경: x -0.20~+0.24, y ±0.24 m (라이다 앞 끝 +0.215, 바퀴 충돌 구 ±0.225 포함. 팔 올리면 재조정)
       plugins: ["voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -239,7 +239,7 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
       use_sim_time: True
-      footprint: "[[0.20, 0.20], [0.20, -0.20], [-0.20, -0.20], [-0.20, 0.20]]"  # 변경: 0.40x0.40 m (팔 올리면 재조정)
+      footprint: "[[0.24, 0.24], [0.24, -0.24], [-0.20, -0.24], [-0.20, 0.24]]"  # 변경: x -0.20~+0.24, y ±0.24 m (라이다 앞 끝 +0.215, 바퀴 충돌 구 ±0.225 포함. 팔 올리면 재조정)
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
