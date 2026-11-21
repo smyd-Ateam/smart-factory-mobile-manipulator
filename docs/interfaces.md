@@ -4,7 +4,7 @@
 > 코드와 이 문서가 다르면 이 문서를 먼저 고치고(PR + 리뷰) 코드를 맞춘다.
 
 - 담당: A (공통 인터페이스 · 내비게이션 · 상태머신)
-- 상태: 초안 (v0.24)
+- 상태: 초안 (v0.25)
 - `TBD` = 아직 미정. 남은 항목은 6장 체크리스트 참고.
 - 본 프로젝트는 시뮬레이션(소프트웨어)만 다룬다.
 
@@ -134,7 +134,7 @@ map
 | 로봇 기준 | `base_link` | 확정 (직접 제작 차체에서 이 이름 사용) | robot_state_publisher |
 | 라이다 | `base_scan` | 확정 (직접 제작 차체에서 이 이름 사용) | robot_state_publisher |
 | 바퀴 · 캐스터 | `left_wheel_link`, `right_wheel_link`, `front_caster_link`, `rear_caster_link` | 확정 (`mm_description`) | robot_state_publisher |
-| 카메라 | `camera_link` | 확정: `link4 → DaBai_DCW2_Link → camera_link`(오프셋 0), +Y가 시선 방향. 장착 링크 `link4` 확정 (C, D). 오프셋 값은 2.1 참고 (B가 11/11까지 확정) | robot_state_publisher |
+| 카메라 | `camera_link` | 확정: `link4 → DaBai_DCW2_Link → camera_link`(오프셋 0), +Y가 시선 방향. 장착 링크 `link4` 확정 (C, D). 오프셋 값은 2.1 참고 (B 확정, 2026-11-20, 통합 모델 기준) | robot_state_publisher |
 | 카메라 optical | `camera_optical_frame` | 확정: `camera_link` 기준 rpy (-90°, 0, 0), 축은 1.2 표 (xacro 추가 완료, B) | robot_state_publisher |
 | 팔 베이스 | `arm_base_link` | 확정 (원본 `base_link`에서 변경). +Y가 팔 앞쪽이라 장착 시 yaw -90° (2.1) | robot_state_publisher |
 | 팔 링크 | `link1` ~ `link5` | 확정 (분리형 DOFBOT 모델) | robot_state_publisher |
@@ -236,6 +236,7 @@ behavior_server (복구 동작)                        → (기본) /cmd_vel
   - C 실측 (2026-11-19, Gazebo와 함께 실행, Far 자세, WSL CPU): OpenVINO 적용 후 평균 약 4.4 Hz · 최소 3.8 Hz (PyTorch는 평균 약 3.0 Hz · 최소 1.4 Hz, 추론 약 165 ms → 100 ms). 최소 3 Hz 기준 충족, 목표 10 Hz에는 아직 못 미침.
   - 이전 기준 최소 5 Hz (C, 2026-11-09)는 Gazebo 연동 전 C 노트북(WSL, i5-1240P CPU)의 YOLOv8n 추론 시간(640 입력 약 128 ms(약 7.8 Hz), 320 입력 약 73 ms(약 13.6 Hz))으로 정한 값이었다.
 - 수신 측 안전장치 (A): `/perception/target_pose` 수신 측(A)은 `frame_id`가 `'base_link'`와 정확히 일치하지 않거나, x/y/z에 NaN/inf가 있거나, x≤0이면 해당 메시지를 무시한다(구현: f523b1f, 원준님 PR #1 제안 기반).
+  - 추가 필터 (A, C 제안 PR #1 2026-11-20, `feat/state-machine` 구현): x가 상한 `target_pose_max_x_m`(기본 2.0 m)보다 크면 무시한다(경계값 2.0 m는 통과). 직전에 통과한 x와 차이가 `target_pose_max_jump_m`(기본 0.1 m) 이상이면(앞뒤 양방향) 무시한다. 걸러진 메시지는 직전 값으로 쓰지 않고, 마지막으로 통과한 메시지 뒤 stamp 기준 `target_pose_max_age_sec`(기본 1.0 s) 넘게 지나면 직전 값을 지우고 처음 메시지처럼 본다(물체를 놓쳤다가 다시 잡았을 때 계속 걸리지 않게). 상한 2.0 m는 far 관측 범위 최대값 기준 1차값이고, C의 실제 검출 가능 거리 측정 후 조정한다.
 - `header.stamp`는 처리 시각이 아니라 이미지를 찍은 시각이다. 물체가 안 보이면 발행하지 않으므로, 받는 쪽은 stamp 기준으로 1 s 넘게 새 값이 없으면 미검출로 처리한다 (C).
 
 ---
@@ -276,6 +277,7 @@ float64 bearing_error_rad
 - 거리·방위 오차의 기준 좌표계: `base_link` (D 확정)
 - `standoff_m`: `base_link` 원점에서 물체까지의 거리
 - `error_code`: 5.3 표의 이름을 그대로 사용. 정렬 중 물체를 놓친 경우에도 `OBJECT_NOT_FOUND` 반환
+- 상태머신이 보내는 `timeout_sec` 기본값: 30 s (D 확인, PR #1 2026-11-19. YOLO 3 Hz 조건 모의 시험에서 정렬 최대 약 9.7 s). 파라미터 `align_timeout_sec`로 바꿀 수 있다.
 - 시간 제한 (D 확인, 2026-11-09): 서버는 `timeout_sec`이 되면 직접 `ALIGN_TIMEOUT`을 반환한다. 상태머신은 `timeout_sec`보다 몇 초(임시 5 s) 더 기다려도 결과가 없으면 목표를 취소하고 `ALIGN_TIMEOUT`으로 기록한다. 취소되면 정렬 쪽은 속도 0을 보내고 끝낸다.
 
 ### 4.2 `Grasp` 액션 (B 확정)
@@ -394,7 +396,7 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
   - `/amcl_pose`는 쓰지 않는다 (차체가 일정 거리 · 각도를 움직여야 갱신됨)
 - TF 신선도: `map → odom`의 stamp가 현재 시각 − 0.5 s보다 오래되면 오래된 것으로 본다 (`tf_stale`). AMCL은 stamp를 `transform_tolerance`(1.0 s)만큼 미래로 찍고, 차체가 정지해 있어도 10 Hz로 다시 보낸다 (2026-11-09 측정). 미래 시각은 정상으로 본다.
 - 도착 오차 측정 (2026-11-09, 남은 노드 없는 정상 주행 11회): 상태머신 기준 0.08~0.11 m (Nav2 `xy_goal_tolerance` 0.10), Gazebo 실제 위치 기준 0.02~0.126 m (AMCL 오차 0.02~0.12 m가 대부분), yaw 약 0.21~0.26 rad (Nav2 yaw 허용치 0.25 근처). Nav2 허용 오차를 줄여도 AMCL 오차는 남아서 효과가 작으므로 Nav2 설정은 그대로 둔다. D가 모의 모델로 도착 위치 오차 0.13 m 안에서 400번씩 돌려본 결과 정렬 제어는 모두 수렴했고, 문제는 시작할 때 물체가 화면에 보이는지였다 (아래 이동 목표 거리). yaw는 정렬 시작 범위(0.35 rad) 안이라 여유 있음
-- 이동 목표 거리 (D 제안, 2026-11-09): Nav2 목표는 물체에서 `standoff_m`보다 0.15 m 이상 멀리 둔다 (`standoff_m` 0.25 m면 0.40 m 이상). (D 11/10 제안, 실측 도착 오차 반영해 0.10→0.15 m로 조정, PR #1)
+- 이동 목표 거리 (D 제안, 2026-11-09): Nav2 목표는 물체에서 `standoff_m`보다 0.15 m 이상 멀리 둔다 (기본 `standoff_m` 0.35 m면 0.50 m 이상. 처음 계산은 초기 시험값 0.25 m 기준 0.40 m였음. 상태머신 코드는 아직 0.35 m 기준으로 안 바뀜). (D 11/10 제안, 실측 도착 오차 반영해 0.10→0.15 m로 조정, PR #1)
   - 근거: 0.25 m에 두면 약 40 %가 처음부터 물체가 화면 밖, 0.35 m 이상이면 거의 100 % 보임 (D 모의 시험). 차체 앞 끝(라이다 포함)이 `base_link` 기준 x +0.215 m라 0.25 m에 세우면 물체 중심까지 여유가 약 3.5 cm뿐이고, 도착 오차만큼 물체에 부딪힐 수 있음
   - 차체 앞 끝 값 (A, 2026-11-15): PR #4(B, `feat/navigation-chassis-update`, 리뷰 중)에서 차체가 0.40×0.30×0.10 → 0.38×0.28×0.06 m로 바뀌어 차체 앞면은 x +0.19 m로 줄었지만, 라이다(`base_scan`, x 0.18 m)가 앞으로 튀어나와 반경 0.035 m를 포함한 실제 앞 끝은 x +0.215 m. PR #4 리뷰 중 URDF 값 계산과 TF(`base_link → base_scan` = (0.18, 0, 0.075))로 확인하고 RViz로 모양 확인. 이전 값 0.20 m는 예전 차체(길이 0.40 m) 기준
   - 카메라 위치 임시값으로 계산한 결과라 관측 자세가 정해지면 D가 다시 확인
@@ -431,6 +433,8 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | near | (0.260, 0.001, 0.206) | (-2.581, 0, -1.571) | 약 58° 아래 |
 | pre-grasp | (0.290, 0.001, 0.134) | (-3.023, 0, -1.571) | 약 83° 아래 |
 | grasp | — (기재 안 함) | — | — |
+
+- pre-grasp 자세 변경 (B, 2026-11-21, `feat/grasp` 5741526): YOLO 근거리 검출을 위해 카메라 숙임각을 약 84°에서 69.3°(A 실측 69.2°)로 낮춤. joint4 -1.435083 → -1.190737 rad, 나머지 관절은 그대로. 이전 자세는 `set_pre_grasp_pose_84deg.sh`로 보존. 위 표와 카메라 TF는 아직 이전 값이고, 반영 여부는 6장 체크리스트 참고
 
 - 자세 전환 순서: Far → Near(약 0.60m) → Pre-grasp(약 0.35m) → Grasp (B 제안, 희선님 개인 노션, 2026-11-15)
 
@@ -479,9 +483,9 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - [x] 카메라 장착 링크 → `link4` (2026-11-09, C · D 찬성, 2.1)
 - [x] 카메라 장착 오프셋 (B) → `link4 → DaBai_DCW2_Link` xyz (-0.0002, 0.0689, 0.0506) m, rpy (0.0087, 0, 0) rad로 확정 (통합 모델 기준, PR #1 답변, 2026-11-20, 2.1)
 - [x] 6번 서보(그리퍼) 각도 범위 → 180°
-- [x] 그리퍼 실제 벌림 폭(cm) · 그리퍼 모델 형태 → 최대 약 6 cm, 좌우 집게 분리형 (`grip_joint` + mimic) (B)
+- [x] 그리퍼 실제 벌림 폭(cm) · 그리퍼 모델 형태 → 최대 약 6 cm, 좌우 집게 분리형 (`gripper_joint` + mimic, 원본 이름 `grip_joint`) (B)
 - [x] `base_link.STL` → 팀원 제공
-- [x] joint2, joint4 범위 → 1자 버전 URDF로 교체해서 해결
+- [x] joint2, joint4 범위 → 분리형 DOFBOT 모델로 교체해서 해결 (2.3 관절 표 기준. 처음엔 1자 버전 URDF로 해결했으나 이 URDF는 더 이상 쓰지 않음)
 - [x] 시뮬 카메라 토픽 이름 → `/camera/...`로 확정
 - [x] 깊이 이미지 형식 → `32FC1`(m) 확정 (D가 Gazebo Fortress 깊이 카메라에서 확인, PR #1 댓글 2026-11-19. C도 32FC1 예상, PR #1 댓글 2026-11-18)
 - [x] visual servoing 제어 방식 → 베이스 미세 정렬, MoveIt Servo 미사용
@@ -494,23 +498,29 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - [x] 기본 `standoff_m` 값 → 0.35 m 확정 (A, 2026-11-21, 근거는 5.6 참고). 초기 시험값 0.25 m에서 변경
 - [ ] 재시도별 `standoff_m` 값 (A) — 0.29/0.32/0.35 m 전부 IK 성공 + 접촉 없음이 확인된 후보라 재시도용으로 쓸 수 있을 걸로 보이나, 구체적인 순서 · 조합은 아직 미정
 - [x] `Grasp` 필드 타입 · `target_class` 사용 · 실패 코드 → B 확정 (4.2, 5.3)
-- [ ] 같은 클래스 물체가 여러 개일 때 구분 방법 (`target_id` 추가 여부, A·B·C)
+- [ ] 같은 클래스 물체가 여러 개일 때 구분 방법 (`target_id` 추가 여부, A·B·C) — C가 pre-grasp 단계에서 "화면 중심에 가장 가까운 검출"을 고르는 방식을 제안(PR #3). D 확인 후 결정
 - [ ] 물체 방향(yaw)이 파지에 필요한지 (B) — 처음엔 고정 접근 방향, 물체 확정 후 검토. 필요하면 C가 `target_pose` orientation 채움. 파지는 위에서 수직으로 접근하는 방식을 우선 검토 (B). 5축이라 IK가 어려우면 자세 제약 완화나 측면 접근 검토
 - [x] 그리퍼 컨트롤러 이름 → `gripper_controller`
 - [x] 파지 대상 물체 · YOLO 클래스 이름 → `block`, `pin`, `hex_nut`, `bolt` (5.4). `Align` · `Grasp`의 `target_class`와 같은 이름 사용
-- [ ] DOFBOT 그리퍼 최대 벌림 폭 · 들 수 있는 무게 (B) — 벌림 폭은 약 6 cm로 확인(5.4 물체보다 큼). 무게는 Gazebo에서 시험용 질량으로 마찰 · 파지 안정성을 검증한 뒤 결정
+- [ ] DOFBOT 그리퍼가 들 수 있는 무게 (B) — 벌림 폭은 위 항목에서 확정(약 6 cm). 무게는 Gazebo에서 시험용 질량으로 마찰 · 파지 안정성을 검증한 뒤 결정
 - [ ] 물체 놓는 방법 (세움/눕힘, 바닥/작업대 높이) (A, B, D)
 - [ ] 파지 후 물체를 지정된 위치에 내려놓고 관측 자세로 복귀하는 단계 (A, B) — B 언급 (2026-11-09). 내려놓을 위치, 상태머신 단계, 인터페이스 미정
 - [x] 목표 클래스 지정 방식 → `/perception/target_class` (`std_msgs/msg/String`, `transient_local`)
-- [ ] 관측 자세(observe pose) 관절 값 (B, C) — 이동·정렬 중 팔 고정 자세. YOLO 학습용 합성 데이터 시점 기준. MoveIt 자세 이름 `observe_pose`로 추가 예정 (B). 전방 사선 하향 관측을 우선 검토하고, C와 카메라 시야를 확인한 뒤 관절값 확정. 정렬하면서 `standoff_m`(0.25 m)까지 다가가는 동안에도 물체가 화면 안에 있어야 함 (D). 이동 전에 팔을 이 자세로 보내는 방식: 상태머신이 B에게 액션으로 요청하고, B가 MoveIt2로 경로 계획 · 실행 후 성공 여부 반환 (B, 2026-11-09, 4장). 카메라가 `link4`라 joint1~4 값에 따라 시점이 바뀌므로, C의 합성 데이터 전에 정해야 함 (C)
-  - far / near 두 자세로 나눔 (5.6, 2026-11-15). far는 `observe_pose_01`, near 선정 완료 (2026-11-15)
+- [x] 관측 자세(observe pose) 관절 값 (B, C) → far · near · pre-grasp 관절 값 확정 (5.6, 2026-11-15). 카메라가 `link4`라 joint1~4 값에 따라 시점이 바뀌므로 C의 합성 데이터 시점 기준이 됨
+  - [ ] MoveIt SRDF에 자세 이름 등록 (B) — 지금은 `observations/` 파일명만 참고용
+  - [ ] 팔을 관측 자세로 보내는 액션 (B) — 상태머신이 요청, B가 MoveIt2로 실행 후 성공 여부 반환 (4장). A 초안 PR #5 리뷰 대기
+- [ ] pre-grasp 숙임각 69.3° 반영 (A, B) — B가 `feat/grasp`에서 약 84° → 69.3°로 변경(5.6 참고). 5.6 표 · 카메라 TF에 반영할지 결정 필요. pin 검출 결과(색 변경 후 재학습)까지 보고 한 번에 정리 예정
+- [ ] grasp 자세 카메라 TF (B) — 5.6 표에 아직 없음
+- [ ] 정렬 완료 거리를 0.35 m 근처로 조정 (D) — C 요청(PR #3, 지금 약 0.22~0.28 m). 반영되면 5.6 Near→Pre-grasp 전환과 함께 정리
+- [ ] 차체 · 라이다 · 팔 베이스 치수 정식 반영 (A, B) — PR #4 머지 후. caster_gap 2 mm는 `feat/grasp` · PR #4 둘 다 반영됨
 - [x] MoveIt 계획 그룹 → `dofbot_arm` (joint1~5, KDL) (B)
 - [x] MoveIt 기본 자세 → `home` (관절 전부 0, 1자 자세) (B)
 - [x] 검출 발행 주기 Hz → `target_pose` 최소 3 Hz, 목표 10 Hz (3.3). D 정렬 모의 시험 · C OpenVINO 실측으로 5 Hz에서 변경 (PR #3, 2026-11-19)
 - [x] 공용 launch 파일에 렌더러 옵션 인자 추가 (A) → `software_gl`, `headless`, `rviz_gpu`, `render_engine` (0장)
 - [ ] 카메라 해상도 (C) — 320×240(현재 테스트 값)과 640×480을 첫 학습 때 비교, RTF 영향도 함께 확인. YOLOv8n CPU 추론은 640 입력 약 7.8 Hz, 320 입력 약 13.6 Hz (C 측정)
 - [x] 상태머신 구현 방식 → 직접 만든 Python 노드 (`mm_task_manager`, `feat/state-machine`). 이동 단계 규칙은 5.5
-- [ ] `project_interfaces` 패키지 (Align, Grasp 액션) — Align 필드 확정(D, 11/9)돼서 A가 만들어 develop에 먼저 올림. 관측 자세 액션은 B 초안이 나오면 추가
+- [x] `project_interfaces` 패키지 (Align, Grasp 액션) → develop에 머지 완료 (PR #2)
+  - [ ] 관측 자세 액션 추가 — PR #5 초안 확정 후
 - [x] 상태머신이 Align 응답을 못 받았을 때 → `timeout_sec` + 여유 뒤 취소, `ALIGN_TIMEOUT` (D 확인, 4.1)
 - [ ] Grasp 최대 소요 시간 (B) — 상태머신 제한 시간 임시 60 s (B: 60 s보다 적게 걸릴 것 같음). 그리퍼 제어 구현 후 실제 시간 보고 조정
 - [ ] Grasp에 넘길 `target_pose`의 최대 나이 (B) — 정렬 완료 후 받은 값 중 stamp 기준 1.0 s 이내. C 발행 주기(최소 3 Hz, 약 0.33 s 간격)와 맞음. B 확인 필요
@@ -560,3 +570,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-21 | v0.22 | Mac VM 깊이 카메라 재시험 반영(0장): `render_engine:=ogre2 software_gl:=true headless:=true`면 이 VM도 `test_room`·`yolo_test_room` 둘 다 깊이·RGB·YOLO 정상(실행 인자가 SDF 센서 설정을 덮어씀), 기본값 ogre는 여전히 비정상, RTF 저하 트레이드오프 명시. 5.7 카메라 실제 발행 주기 실측치(RGB 약 24.5 Hz · 깊이 약 21.8 Hz · camera_info 약 28 Hz, 설정값 30 Hz보다 낮음) 추가. 토픽 이름 · 메시지 타입 · 프레임은 그대로라 버전 유지 | A |
 | 2026-11-21 | v0.23 | 5.6 pre-grasp 최종 `standoff_m` 기본값 0.35 m로 확정(6장 체크리스트 반영). 근거: B의 MoveIt2 IK 검증(World X 0.265/0.29/0.32/0.35 m 전부 16/16 성공, PR #1)과 VM 접촉 경계 정밀 시험(물체 4종 × Pre-grasp/Grasp 2자세 격리 시험, 0.29~0.35 m 전부 주행 접촉 없음 확인, 단 Grasp 자세 기준 pin · bolt는 0.29 m 여유가 0.9~1.3 cm로 타이트) 종합. 다른 모듈(B 파지 접근, D 정렬 목표)이 따라야 할 기준값이라 버전 상향 | A |
 | 2026-11-21 | v0.24 | 2.1 `base_link → arm_base_link` 장착 위치 xyz (0.100, 0, 0.010) m 확정, 카메라 장착 오프셋(`link4 → DaBai_DCW2_Link`)을 통합 모델 기준 공식값으로 확정(B, PR #1 답변 id 7048233384, 2026-11-20). 6장 체크리스트 두 항목 완료 반영. 다른 모듈(C 합성 데이터, D 정렬 목표 TF)이 참고하는 기준값이라 버전 상향 | A |
+| 2026-11-21 | v0.25 | 6장 체크리스트를 현재 상태와 맞춤: 관절 이름 `gripper_joint`, joint2 · joint4 해결 근거, 관측 자세 관절 값 완료(SRDF · 액션은 하위 항목), `project_interfaces` 머지 완료, 그리퍼 항목 중복 정리, 새 미정 항목 추가(pre-grasp 숙임각 69.3°, grasp 카메라 TF, 정렬 완료 거리, 차체 치수, 같은 클래스 구분에 C 제안 추가). 2.2 카메라 오프셋 상태, 3.3 x 상한 · 점프 필터, 4.1 `timeout_sec` 기본 30 s, 5.5 이동 목표 거리 예시를 0.35 m 기준으로, 5.6 pre-grasp 자세 변경 메모 추가 | A |
