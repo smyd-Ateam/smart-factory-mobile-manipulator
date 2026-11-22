@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mm_perception</name>
+  <version>0.1.0</version>
+  <description>YOLO 부품 검출 노드 (C, 인식): /camera/image_raw → /perception/detections</description>
+  <maintainer email="noreply@example.com">C (perception)</maintainer>
+  <license>TODO</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>vision_msgs</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <!-- ultralytics는 pip로 따로 설치 (ultralytics 8.3 계열) -->
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

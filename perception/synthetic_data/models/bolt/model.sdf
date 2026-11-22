@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<!-- bolt: YOLO class id 3 (Gazebo label 4). 원점 = 바닥 중심, 단위 m -->
+<sdf version="1.8">
+  <model name="bolt">
+    <link name="link">
+      <inertial>
+        <pose>0 0 0.026 0 0 0</pose>
+        <mass>0.03</mass>
+        <inertia><ixx>9.48e-06</ixx><ixy>0</ixy><ixz>0</ixz><iyy>9.48e-06</iyy><iyz>0</iyz><izz>9.6e-07</izz></inertia>
+      </inertial>
+      <collision name="head"><pose>0 0 0.004 0 0 0</pose><geometry><cylinder><radius>0.0135</radius><length>0.008</length></cylinder></geometry></collision>
+      <collision name="shank"><pose>0 0 0.034 0 0 0</pose><geometry><cylinder><radius>0.006</radius><length>0.052</length></cylinder></geometry></collision>
+      <visual name="visual">
+        <geometry><mesh><uri>model://bolt/meshes/bolt.stl</uri></mesh></geometry>
+        <material>
+          <ambient>0.30 0.30 0.33 1</ambient>
+          <diffuse>0.30 0.30 0.33 1</diffuse>
+          <specular>0.3 0.3 0.3 1</specular>
+        </material>
+      </visual>
+    </link>
+    <!-- boundingbox camera가 이 번호로 박스를 만든다 (0은 배경이라 1부터 사용) -->
+    <plugin filename="ignition-gazebo-label-system" name="ignition::gazebo::systems::Label">
+      <label>4</label>
+    </plugin>
+  </model>
+</sdf>
