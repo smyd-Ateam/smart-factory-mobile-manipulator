@@ -4,7 +4,7 @@
 > 코드와 이 문서가 다르면 이 문서를 먼저 고치고(PR + 리뷰) 코드를 맞춘다.
 
 - 담당: A (공통 인터페이스 · 내비게이션 · 상태머신)
-- 상태: 초안 (v0.25)
+- 상태: 초안 (v0.26)
 - `TBD` = 아직 미정. 남은 항목은 6장 체크리스트 참고.
 - 본 프로젝트는 시뮬레이션(소프트웨어)만 다룬다.
 
@@ -167,12 +167,14 @@ map
 
 - [x] `base_link` → `arm_base_link` 이름 변경
   - 완료 (B, 2026-11-07): 새 모델 Xacro에서 `arm_base_link`, `link1`~`link5`, `joint1`~`joint5`로 변경하고, MoveIt 설정 패키지도 새 모델 기준으로 다시 생성
-- [ ] 각 링크에 `<inertial>` (질량 · 관성) 추가
+- [x] 각 링크에 `<inertial>` (질량 · 관성) 추가
+  - 완료 (B, PR #1 답변, 2026-11-21): 팔 · 그리퍼 링크에 inertial 값 추가 완료
 - [x] `base_link.STL` 확보 (팀원 제공, 크기 약 12 × 26 × 8 cm, 단위 m 확인)
 - [ ] `ros2_control` / `<gazebo>` 태그 추가
   - 진행 (B, 2026-11-07): 새 분리형 모델 기준으로 MoveIt2 설정 재생성 (`dofbot_arm` 그룹, `home` 자세, `dofbot_arm_controller`), RViz에서 Plan → Execute 성공. 현재는 FakeSystem(가짜 하드웨어) 기준이고 Gazebo · ros2_control 연동은 아직 (`dofbot_gazebo.xacro`, `dofbot_ros2control.xacro`는 비활성화 상태)
-- [ ] 그리퍼 링크 · 관절, `ee_link` 추가
-  - 진행 (B, 2026-11-07): 그리퍼가 분리된 새 모델로 해결. 좌우 집게가 `grip_joint`와 mimic 관절로 함께 움직이고 RViz에서 개폐 확인. 이름 확정(2026-11-08): `Gripping_point_Link` → `ee_link`, `grip_joint` → `gripper_joint`, `gripper_link`는 고정 장착 기준 링크. xacro 반영 완료(B, 2026-11-08). `gripper_controller` 구성은 B 작업 예정
+- [x] 그리퍼 링크 · 관절, `ee_link` 추가
+  - 완료 (B, 2026-11-07~08): 그리퍼가 분리된 새 모델로 해결. 좌우 집게가 `grip_joint`와 mimic 관절로 함께 움직이고 RViz에서 개폐 확인. 이름 확정(2026-11-08): `Gripping_point_Link` → `ee_link`, `grip_joint` → `gripper_joint`, `gripper_link`는 고정 장착 기준 링크. xacro 반영 완료(B, 2026-11-08). `gripper_controller` 구성은 B 작업 예정
+  - [ ] Gazebo에서 그리퍼 mimic 관절 연동 구동 · 검증 (B) — RViz에서는 개폐 확인됐으나 Gazebo 쪽 mimic 관절 연동은 아직 해결 중 (B, PR #1 답변, 2026-11-21)
 - [x] 카메라 링크 · 센서 플러그인 추가
   - 진행 (B, 2026-11-08): `camera_link`, `camera_optical_frame` 추가. `dofbot_gazebo.xacro`에 RGB-D 센서(`ignition_frame_id`: `camera_optical_frame`)가 있으나 아직 비활성화 상태
   - 연동할 때 주의: 센서 토픽 이름이 `rgbd_camera/image`, `rgbd_camera/depth_image`, `rgbd_camera/camera_info` 등이라 3장 이름(`/camera/...`)과 다르다. bridge에서 3장 이름으로 맞춘다
@@ -420,7 +422,7 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 |---|---|---|---|---|---|
 | far | 이동 중 물체 찾기 · 시맨틱 맵 (원거리 탐색) | 0.55~2.00 (후보) | `observe_pose_01` | joint1 0, joint2 0, joint3 -1.1464, joint4 -0.8237, joint5 0 | 확정 |
 | near | 정렬(D) · 파지(B) (접근 · 초기 정렬) | 0.30~0.60 (후보) | `observe_pose_near` | joint1 0, joint2 -0.008482, joint3 -1.282087, joint4 -1.299052, joint5 -0.000157 | 확정 (B 선정) |
-| pre-grasp | 최종 관측 · 파지 준비 | 0.25~0.35 | `pre_grasp_pose_01` | joint1 0, joint2 -0.636802, joint3 -0.959445, joint4 -1.435083, joint5 -0.000157 | 확정 (B 선정) |
+| pre-grasp | 최종 관측 · 파지 준비 | 0.25~0.35 | `pre_grasp_pose_01` | joint1 0, joint2 -0.636802, joint3 -0.959445, joint4 -1.190737, joint5 -0.000157 | 변경 적용 완료, YOLO 검증 진행 중 |
 | grasp | 그리퍼를 물체 위치로 이동 | 0.265 (참고) | `grasp_pose_01` | joint1 0, joint2 -1.282087, joint3 -0.602873, joint4 -1.231193, joint5 -0.000157 | 참고: 도달 위치 검증용. Pre-grasp → Grasp 이동 중 충돌 · 재현 문제가 있어 MoveIt2로 해결 예정 (B) |
 
 ※ 아직 MoveIt SRDF에 등록된 자세 아님, observations/ 파일명을 참고용으로 적음
@@ -431,10 +433,10 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 |---|---|---|---|
 | far | (0.259, 0.001, 0.269) | (-1.961, 0, -1.571) | 약 22° 아래 |
 | near | (0.260, 0.001, 0.206) | (-2.581, 0, -1.571) | 약 58° 아래 |
-| pre-grasp | (0.290, 0.001, 0.134) | (-3.023, 0, -1.571) | 약 83° 아래 |
+| pre-grasp | (0.303, 0.001, 0.150) | (-2.778, 0, -1.571) | 약 69.3° 아래 |
 | grasp | — (기재 안 함) | — | — |
 
-- pre-grasp 자세 변경 (B, 2026-11-21, `feat/grasp` 5741526): YOLO 근거리 검출을 위해 카메라 숙임각을 약 84°에서 69.3°(A 실측 69.2°)로 낮춤. joint4 -1.435083 → -1.190737 rad, 나머지 관절은 그대로. 이전 자세는 `set_pre_grasp_pose_84deg.sh`로 보존. 위 표와 카메라 TF는 아직 이전 값이고, 반영 여부는 6장 체크리스트 참고
+- pre-grasp 자세 변경 (B, 2026-11-21, `feat/grasp` 5741526): YOLO 근거리 검출을 위해 카메라 숙임각을 약 84°에서 69.3°(A 실측 69.2°)로 낮춤. joint4 -1.435083 → -1.190737 rad, 나머지 관절은 그대로. 이전 자세는 `set_pre_grasp_pose_84deg.sh`로 보존. 위 표 · 카메라 TF에 반영 완료 (B 확인, PR #1 답변, 2026-11-21). YOLO 쪽 검증은 진행 중(6장 체크리스트 참고)
 
 - 자세 전환 순서: Far → Near(약 0.60m) → Pre-grasp(약 0.35m) → Grasp (B 제안, 희선님 개인 노션, 2026-11-15)
 
@@ -446,7 +448,7 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 2. 1차 완료 후, 정렬(차체 이동)은 멈춘 상태로 B의 관측 자세 전환 액션(observe_pose, 4장)을 호출해 팔을 pre-grasp 자세로 이동
 3. 전환 완료 후 pre-grasp 관측 자세에서 /servoing/align 2차 호출 — standoff_m=0.35 m (기본값 확정, A, 2026-11-21. 근거: B의 IK 검증 범위 0.29~0.35 m 전부 성공 + VM 접촉 경계 정밀 시험에서 0.29~0.35 m 전부 주행 접촉 없음 확인, 단 Grasp 자세 기준 pin·bolt는 0.29 m 여유가 타이트해 가장 안전한 0.35 m 채택. 재시도별 값은 5.2 참고, 여전히 TBD)
 
-- 전환 구간 동안은 차체도 팔도 움직이지 않는다 — near 조건(정렬 시작부터 끝까지 물체가 계속 보여야 함)과 충돌하지 않게 하기 위함.
+- Near→Pre-grasp 전환 중에는 차체를 정지시키고, 팔만 Pre-grasp 자세로 이동한다. 팔의 자세 전환이 완료된 후 `/servoing/align`을 다시 호출한다. 정렬과 팔의 자세 전환은 동시에 수행하지 않는다 (B 확인, PR #1 답변, 2026-11-21).
 - 이 흐름은 5.2(IK 실패 후 재정렬, 최대 2회)와 별개다 — 재정렬은 같은 pre-grasp 자세 안에서 standoff_m만 바꿔 다시 호출하는 것이고, 여기서 말하는 2단계는 재정렬과 무관하게 매번 거치는 고정 순서다.
 - 의존성: 이 방식은 B의 observe_pose 액션(PR #5)이 확정·구현돼야 실제로 상태머신에 반영할 수 있다. PR #5 리뷰 전까지는 설계만 문서화하고 mm_task_manager 코드는 그대로 둔다.
 - 알아둘 점: observe_pose 액션 초안(PR #5, 7b9920f)은 pre-grasp 자세 이름을 추가하는 작업을 이번에 같이 진행했다(efe20a7, pose_name "pre_grasp").
@@ -462,15 +464,15 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 항목 | 값 |
 |---|---|
 | 해상도 | 640×480 |
-| 주기 | 30 Hz (RGB-D 카메라 `update_rate` 설정값) |
+| 주기 | 10 Hz (RGB-D 카메라 `update_rate` 현재 설정값) |
 | 화각 (FOV) | 수평 1.047 rad (약 60°), 수직 약 46.8° |
 | 초점 거리 · 중심 | fx = fy = 554.3827, cx = 320.0, cy = 240.0 |
 | 왜곡 | `plumb_bob`, [0, 0, 0, 0, 0] |
 
 - Gazebo가 해상도 · FOV로 생성한 값이고, 별도 캘리브레이션은 없다
 - 관측 자세가 바뀌어도 내부 파라미터는 같다
-- 처음 측정(2026-11-15)은 일반 RGB 카메라 `arm_rgb_test`(10 Hz) 기준. 2026-11-21 B가 이 카메라를 삭제하고 RGB-D 카메라(`rgbd_camera`, 30 Hz) 하나로 정리함 (2.4). 두 센서의 해상도(640×480) · 수평 FOV(1.047 rad) · 장착 pose 설정이 같아서 내부 파라미터도 같을 것으로 보지만, `rgbd_camera` 기준 `/camera/camera_info` 실측 재확인은 아직
-- 실제 발행 주기 실측 (A, 2026-11-21, Mac VM, `render_engine:=ogre2 software_gl:=true headless:=true`, 30 s): 설정값 30 Hz와 달리 `/camera/image_raw` 약 24.5 Hz, `/camera/depth/image_raw` 약 21.8 Hz, `/camera/camera_info` 약 28 Hz로 측정됨. CPU(소프트웨어) 렌더링 부하 때문으로 추정 — 다른 환경에서도 실측 권장
+- 처음 측정(2026-11-15)은 일반 RGB 카메라 `arm_rgb_test`(10 Hz) 기준. 2026-11-21 B가 시험용 RGB 카메라를 삭제하고 RGB-D 카메라(`rgbd_camera`) 하나로 정리함 (2.4). 이후 `update_rate` 설정값을 10 Hz로 변경함(B 확인, PR #1 답변, 2026-11-21). 두 센서의 해상도(640×480) · 수평 FOV(1.047 rad) · 장착 pose 설정이 같아서 내부 파라미터도 같을 것으로 보지만, `rgbd_camera` 기준 `/camera/camera_info` 실측 재확인은 아직
+- 실제 발행 주기 실측 (A, 2026-11-21, Mac VM, `render_engine:=ogre2 software_gl:=true headless:=true`, 30 s): 이 측정은 `update_rate` 30 Hz 기준이었음(설정값 30 Hz와 달리 `/camera/image_raw` 약 24.5 Hz, `/camera/depth/image_raw` 약 21.8 Hz, `/camera/camera_info` 약 28 Hz로 측정됨. CPU(소프트웨어) 렌더링 부하 때문으로 추정). 이후 `update_rate`가 10 Hz로 바뀌었으므로 이 실측치는 참고용이고, 10 Hz 기준 재실측 필요
 
 ---
 
@@ -509,7 +511,7 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - [x] 관측 자세(observe pose) 관절 값 (B, C) → far · near · pre-grasp 관절 값 확정 (5.6, 2026-11-15). 카메라가 `link4`라 joint1~4 값에 따라 시점이 바뀌므로 C의 합성 데이터 시점 기준이 됨
   - [ ] MoveIt SRDF에 자세 이름 등록 (B) — 지금은 `observations/` 파일명만 참고용
   - [ ] 팔을 관측 자세로 보내는 액션 (B) — 상태머신이 요청, B가 MoveIt2로 실행 후 성공 여부 반환 (4장). A 초안 PR #5 리뷰 대기
-- [ ] pre-grasp 숙임각 69.3° 반영 (A, B) — B가 `feat/grasp`에서 약 84° → 69.3°로 변경(5.6 참고). 5.6 표 · 카메라 TF에 반영할지 결정 필요. pin 검출 결과(색 변경 후 재학습)까지 보고 한 번에 정리 예정
+- [x] pre-grasp 숙임각 69.3° 반영 (A, B) — B가 `feat/grasp`에서 약 84° → 69.3°로 변경(5.6 참고). 5.6 표 · 카메라 TF 반영 완료(B 확인, PR #1 답변, 2026-11-21). 황동 pin 재학습·검출 재시험은 별도 진행 중(인수인계 문서 참고)
 - [ ] grasp 자세 카메라 TF (B) — 5.6 표에 아직 없음
 - [ ] 정렬 완료 거리를 0.35 m 근처로 조정 (D) — C 요청(PR #3, 지금 약 0.22~0.28 m). 반영되면 5.6 Near→Pre-grasp 전환과 함께 정리
 - [ ] 차체 · 라이다 · 팔 베이스 치수 정식 반영 (A, B) — PR #4 머지 후. caster_gap 2 mm는 `feat/grasp` · PR #4 둘 다 반영됨
@@ -571,3 +573,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-21 | v0.23 | 5.6 pre-grasp 최종 `standoff_m` 기본값 0.35 m로 확정(6장 체크리스트 반영). 근거: B의 MoveIt2 IK 검증(World X 0.265/0.29/0.32/0.35 m 전부 16/16 성공, PR #1)과 VM 접촉 경계 정밀 시험(물체 4종 × Pre-grasp/Grasp 2자세 격리 시험, 0.29~0.35 m 전부 주행 접촉 없음 확인, 단 Grasp 자세 기준 pin · bolt는 0.29 m 여유가 0.9~1.3 cm로 타이트) 종합. 다른 모듈(B 파지 접근, D 정렬 목표)이 따라야 할 기준값이라 버전 상향 | A |
 | 2026-11-21 | v0.24 | 2.1 `base_link → arm_base_link` 장착 위치 xyz (0.100, 0, 0.010) m 확정, 카메라 장착 오프셋(`link4 → DaBai_DCW2_Link`)을 통합 모델 기준 공식값으로 확정(B, PR #1 답변 id 7048233384, 2026-11-20). 6장 체크리스트 두 항목 완료 반영. 다른 모듈(C 합성 데이터, D 정렬 목표 TF)이 참고하는 기준값이라 버전 상향 | A |
 | 2026-11-21 | v0.25 | 6장 체크리스트를 현재 상태와 맞춤: 관절 이름 `gripper_joint`, joint2 · joint4 해결 근거, 관측 자세 관절 값 완료(SRDF · 액션은 하위 항목), `project_interfaces` 머지 완료, 그리퍼 항목 중복 정리, 새 미정 항목 추가(pre-grasp 숙임각 69.3°, grasp 카메라 TF, 정렬 완료 거리, 차체 치수, 같은 클래스 구분에 C 제안 추가). 2.2 카메라 오프셋 상태, 3.3 x 상한 · 점프 필터, 4.1 `timeout_sec` 기본 30 s, 5.5 이동 목표 거리 예시를 0.35 m 기준으로, 5.6 pre-grasp 자세 변경 메모 추가 | A |
+| 2026-11-21 | v0.26 | B의 v0.25 리뷰(PR #1) 반영: 5.6 pre-grasp 관절 값 joint4 -1.435083 → -1.190737 표에 반영, 카메라 TF도 69.3° 기준 실측값으로 갱신(xyz (0.303, 0.001, 0.150), rpy (-2.778, 0, -1.571)), Near→Pre-grasp 전환 설명을 "차체 정지·팔만 이동, 완료 후 align 재호출" 기준으로 정정. 5.7 카메라 주기 30 Hz → 10 Hz(실제 설정값)로 정정, 관련 실측치는 참고용으로 표시(10 Hz 기준 재실측 필요). 2.4 팔 · 그리퍼 inertial, 그리퍼 링크 · 관절 · `ee_link` 항목 완료로 변경, Gazebo 그리퍼 mimic 관절 연동 검증 항목 신설. 6장 체크리스트: pre-grasp 숙임각 69.3° 반영 항목 완료 처리 | A |
