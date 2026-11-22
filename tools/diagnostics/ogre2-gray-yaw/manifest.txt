@@ -4,3 +4,4 @@ run_gray_yaw.sh
 gray_yaw_probe.py
 .gitignore
 manifest.txt
+../camera_health.py   (회색 판정 공용 모듈, tools/diagnostics/camera_health.py)

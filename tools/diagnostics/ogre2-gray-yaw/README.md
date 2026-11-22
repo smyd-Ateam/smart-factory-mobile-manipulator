@@ -113,6 +113,8 @@ world / speed : test_room.sdf / 0.35 rad/s
 - 프레임마다 4픽셀 간격 표본으로 픽셀 표준편차(std)와 색 개수를 계산합니다. `std < 2.0`이고 색이 4개 이하이면 회색 프레임입니다. Mac VM에서 회색 프레임은 std 0, 색 1개(밝기 218)였고, 정상 프레임은 std 69 이상이었습니다.
 - yaw는 `/odom` 기준입니다. 로봇이 원점에서 yaw 0으로 생성되므로 월드 yaw와 같습니다 (odom 회전 오차 0.1% 미만). 각 이미지의 header.stamp와 가장 가까운 odom 값을 붙입니다.
 - 같은 stamp의 깊이 이미지(`/camera/depth/image_raw`)에서 유효한 픽셀 비율도 기록합니다. 회색이면서 깊이도 비어 있으면(유효 0) 렌더링 실패로 보고, 깊이가 유효하면 무늬 없는 면을 본 것일 수 있다고 표시합니다.
+- 판정 함수는 `tools/diagnostics/camera_health.py`에 따로 있습니다 (ROS 의존 없음). 다른 시험 스크립트에서 `check_image_msg(msg)`(회색 판정), `depth_valid_ratio(msg)`(깊이 유효 비율), `gray_kind(depth_valid)`(회색 종류 설명)로 같은 기준을 쓸 수 있습니다.
+- 회전하는 동안 모든 프레임이 회색이면 yaw와 관계없이 카메라 전체가 렌더링되지 않은 것입니다. Mac VM에서도 Gazebo 시작 때 가끔 생겼고, 다시 실행하면 정상으로 돌아왔습니다.
 - 회전 전에 팔을 Far 관측 자세(`src/mm_description/scripts/set_observe_pose_far.sh`)로 바꿉니다.
 - 이미지 구독은 RELIABLE입니다 (bridge가 RELIABLE로 발행, BEST_EFFORT로 받으면 큰 이미지가 많이 빠짐).
 

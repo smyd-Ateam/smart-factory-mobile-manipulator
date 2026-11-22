@@ -17,7 +17,6 @@ import os
 import sys
 import time
 
-import numpy as np
 import rclpy
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
@@ -25,9 +24,8 @@ from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 
-STD_MAX = 2.0      # 이 값 미만이고
-UNIQUE_MAX = 4     # 색 개수가 이 값 이하이면 회색 프레임
-STEP = 4           # 표본 간격 (px)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import camera_health as ch   # noqa: E402  회색 판정 공용 모듈 (tools/diagnostics/camera_health.py)
 
 OUT = sys.argv[1]
 SPEED = float(sys.argv[2]) if len(sys.argv) > 2 else 0.35
@@ -77,29 +75,23 @@ class Probe(Node):
         return self.odom_yaw[k], (self.odom_t[k] - t) / 1e6
 
     def on_depth(self, m):
-        if m.encoding != '32FC1':
+        v = ch.depth_valid_ratio(m)
+        if v is None:
             self.skipped['depth:' + m.encoding] = self.skipped.get('depth:' + m.encoding, 0) + 1
             return
-        d = np.frombuffer(m.data, np.float32).reshape(m.height, m.step // 4)[:, :m.width][::STEP, ::STEP]
-        self.depth_valid[stamp_ns(m.header.stamp)] = float((np.isfinite(d) & (d > 0)).mean())
+        self.depth_valid[stamp_ns(m.header.stamp)] = v
 
     def on_image(self, m):
-        ch = {'rgb8': 3, 'bgr8': 3, 'rgba8': 4, 'bgra8': 4, 'mono8': 1}.get(m.encoding)
-        if ch is None:
+        r = ch.check_image_msg(m)
+        if r is None:
             self.skipped[m.encoding] = self.skipped.get(m.encoding, 0) + 1
             return
-        a = np.frombuffer(m.data, np.uint8).reshape(m.height, m.step)[:, :m.width * ch]
-        a = a.reshape(m.height, m.width, ch)[::STEP, ::STEP, :min(ch, 3)]
-        std = float(a.std())
-        flat = a.reshape(-1, a.shape[2]).astype(np.uint32)
-        packed = flat[:, 0] << 16 | (flat[:, 1] << 8 if flat.shape[1] > 1 else 0) | (flat[:, 2] if flat.shape[1] > 2 else 0)
-        uniq = int(np.unique(packed).size)
         t = stamp_ns(m.header.stamp)
         yaw, dt_ms = self.yaw_at(t)
         self.rows.append({'stamp_ns': t, 'stamp_s': round(t / 1e9, 3), 'yaw_deg': round(math.degrees(yaw), 2) if yaw is not None else None,
-                          'odom_dt_ms': round(dt_ms, 1) if dt_ms is not None else None, 'std': round(std, 2),
-                          'unique_colors': uniq, 'mean': round(float(a.mean()), 1),
-                          'gray': std < STD_MAX and uniq <= UNIQUE_MAX, 'phase': self.phase})
+                          'odom_dt_ms': round(dt_ms, 1) if dt_ms is not None else None, 'std': r['std'],
+                          'unique_colors': r['unique_colors'], 'mean': r['mean'],
+                          'gray': r['gray'], 'phase': self.phase})
 
     phase = 'wait'
 
@@ -167,7 +159,7 @@ def main():
     summary = {'frames': len(rows), 'gray_frames': len(gray), 'rotate_frames': len(rot),
                'turned_deg': round(math.degrees(turned), 1), 'speed_rad_s': SPEED,
                'deg_per_frame': round(math.degrees(turned) / len(rot), 2) if rot else None,
-               'gray_rule': f'std < {STD_MAX} and unique_colors <= {UNIQUE_MAX} ({STEP}px 간격 표본)',
+               'gray_rule': ch.RULE,
                'gray_intervals': iv, 'skipped_encodings': n.skipped,
                'std_range_nongray': [min((r['std'] for r in rows if not r['gray']), default=None),
                                      max((r['std'] for r in rows if not r['gray']), default=None)]}
@@ -177,11 +169,14 @@ def main():
 
     print(f"프레임 {len(rows)}개 (회전 중 {len(rot)}개), 회전량 {summary['turned_deg']}°, "
           f"프레임당 약 {summary['deg_per_frame']}°, 회색 프레임 {len(gray)}개")
-    if iv:
+    if rot and all(r['gray'] for r in rot):
+        print('회전하는 동안 모든 프레임이 회색 (yaw와 무관하게 카메라 전체가 렌더링되지 않음). '
+              'Gazebo 시작 때 가끔 생기는 현상일 수 있으니 한 번 더 실행해 주세요.')
+    elif iv:
         print('회색 구간 (odom yaw, 월드 기준):')
         for k, x in enumerate(iv, 1):
             dv = x['depth_valid_max']
-            kind = '깊이 정보 없음' if dv is None else ('깊이도 비어 있음 → 렌더링 실패로 보임' if dv < 0.05 else '깊이는 유효 → 무늬 없는 면일 수 있음')
+            kind = ch.gray_kind(dv)
             print(f"  {k}) yaw {x['yaw_from_deg']:+.1f}° ~ {x['yaw_to_deg']:+.1f}°  ({x['frames']}프레임, sim {x['t_from_s']}~{x['t_to_s']} s, "
                   f"깊이 유효 최대 {dv} [{x['depth_frames']}프레임] → {kind})")
     else:
