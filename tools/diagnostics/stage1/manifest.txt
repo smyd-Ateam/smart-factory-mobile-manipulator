@@ -1,7 +1,14 @@
 # 통합 1단계 시험 도구 파일 목록 (tools/diagnostics/stage1/ 기준)
 README.md
+manifest.txt
+stage1_all.sh
 stage1_run.py
+cam_gate.sh
+env_s1.sh
+joints.py
+world_to_base.py
+cam_check.py
+costmap_self.py
 repeat_yaw0.sh
 yaw0rep_summary.py
-manifest.txt
 ../camera_health.py   (회색 판정 공용 모듈)

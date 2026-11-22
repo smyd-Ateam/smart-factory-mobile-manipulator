@@ -13,17 +13,38 @@ Gazebo·Nav2 시작 → 카메라 확인 → 팔 Far 자세 → Nav2 이동 → 
 | `stage1_run.py` | 시험 1회 본체. 단계별 결과를 JSON 하나(`s1_result_<TAG>.json`)로 저장 |
 | `repeat_yaw0.sh` | approach_yaw=0 강제 접근 반복 시험 (대상별 N회, 회차마다 Gazebo부터 새로 시작) |
 | `yaw0rep_summary.py` | 반복 시험 집계: 도착 yaw, Align 1차 결과, 카메라 회색, costmap, 부품 여유, 실패 원인 분류 |
+| `stage1_all.sh` | 시험 1회 실행: 남은 프로세스 정리 → Gazebo·Nav2 시작 → 카메라 확인(실패 시 최대 3번 재시작) → `stage1_run.py` → 정리 |
+| `cam_gate.sh` | 카메라 정상 확인: 팔 Far 자세 → 3 s 측정 → RGB 색 50가지 이상, 깊이 유효 90% 이상이면 통과 |
+| `env_s1.sh` | ROS Humble, 팀 워크스페이스, 시험 폴더 install을 source하고 부품 모델 경로 추가 |
+| `joints.py` | `/joint_states`에서 팔 관절값 읽기 (자세 도달 확인용) |
+| `world_to_base.py` | 월드 좌표 → base_link 좌표 변환 (카메라 투영 확인용) |
+| `cam_check.py` | RGB·깊이·camera_info 수신 주기, 색 개수, 깊이 유효 비율, 지정 점의 투영·깊이 측정 |
+| `costmap_self.py` | costmap에서 footprint 안·바깥 띠·뒤쪽(-x) 칸 통계 |
 | `../camera_health.py` | 카메라 회색 프레임 판정 공용 모듈 (`ogre2-gray-yaw` 진단 번들과 같은 기준) |
 
 ## 실행 준비 (시험 폴더)
 
-이 폴더의 스크립트는 미리 만들어 둔 시험 폴더(`STAGE1_DIR`, 기본 `/tmp/sfmm-brass-v7`) 안에서 돕니다. 시험 폴더에는 다음이 있어야 합니다 (이 커밋에는 들어 있지 않음):
+스크립트는 시험 폴더(`STAGE1_DIR`, 기본 `/tmp/sfmm-brass-v7`) 안에서 돕니다. 시험 폴더 구성:
 
-- `env_s1.sh`: ROS Humble, 팀 워크스페이스 install, 시험 폴더 install을 source하고 `IGN_GAZEBO_RESOURCE_PATH`에 부품 모델(`models/`)을 추가
+- `env_s1.sh`: 이 폴더의 `env_s1.sh`를 복사 (`TEAM_WS` 기본값은 `$HOME/smart-factory-mobile-manipulator`, mm_navigation·mm_task_manager가 빌드된 팀 워크스페이스)
+- `tools/`: 이 폴더의 `.py`·`.sh` 파일과 `../camera_health.py`를 복사
+- `models/`: feat/yolo 6724510의 `perception/synthetic_data/models` (황동 pin)
 - `src/` + 빌드 결과: `mm_description`·`dofbot_description` (feat/grasp 5741526), `mm_perception` (feat/yolo 6724510, 황동 pin 모델 포함)
 - visual_servoing 90df7d2 빌드 (Align depth·camera_info RELIABLE). 시험 때는 `/tmp/sfmm-align-reliable/install`을 source
 - `yolo_weights/synth_v7_640_openvino_model` (7차 모델을 OpenVINO로 변환한 것)
-- `tools/`: 이 폴더의 세 파일과 함께 `stage1_all.sh`(Gazebo·Nav2 시작, 카메라 확인, `stage1_run.py` 실행, 정리), `cam_gate.sh`, `joints.py`, `world_to_base.py`, `cam_check.py`, `costmap_self.py`, `camera_health.py`
+
+시험 폴더 만들기 예 (이 브랜치를 checkout한 레포 최상위에서):
+
+```bash
+S=/tmp/sfmm-brass-v7; mkdir -p $S/tools $S/src $S/yolo_weights
+cp tools/diagnostics/stage1/*.py tools/diagnostics/stage1/*.sh tools/diagnostics/camera_health.py $S/tools/
+mv $S/tools/env_s1.sh $S/
+git archive 5741526 src/mm_description src/dofbot_description | tar -x -C $S
+git archive 6724510 src/mm_perception | tar -x -C $S
+T=$(mktemp -d); git archive 6724510 perception/synthetic_data/models | tar -x -C $T && mv $T/perception/synthetic_data/models $S/models && rm -rf $T
+(cd $S && source /opt/ros/humble/setup.bash && PYTHONNOUSERSITE=1 colcon build --symlink-install)
+# 7차 모델 OpenVINO 폴더를 $S/yolo_weights/synth_v7_640_openvino_model 에 두기
+```
 
 ## 실행
 
@@ -46,6 +67,8 @@ python3 tools/yaw0rep_summary.py $STAGE1_DIR
 | 이름 | 기본값 | 설명 |
 |---|---|---|
 | `STAGE1_DIR` | `/tmp/sfmm-brass-v7` | 시험 폴더 |
+| `TEAM_WS` | `$HOME/smart-factory-mobile-manipulator` | mm_navigation·mm_task_manager가 빌드된 팀 워크스페이스 (`env_s1.sh`) |
+| `ALIGN_SETUP` | `/tmp/sfmm-align-reliable/install/setup.bash` | visual_servoing 90df7d2 빌드의 setup (`stage1_all.sh`) |
 | `TAG` | 대상 이름 | 결과·로그 파일 이름 |
 | `GOAL` | 없음 (approach_goal 계산) | Nav2 목표 `x,y,yaw` (map) |
 | `NEAR_STANDOFF` | `0.35` | Align 1차 목표 거리 (m). Pre-grasp(2차)는 0.35 고정 |
