@@ -1,0 +1,7 @@
+# 통합 1단계 시험 도구 파일 목록 (tools/diagnostics/stage1/ 기준)
+README.md
+stage1_run.py
+repeat_yaw0.sh
+yaw0rep_summary.py
+manifest.txt
+../camera_health.py   (회색 판정 공용 모듈)
