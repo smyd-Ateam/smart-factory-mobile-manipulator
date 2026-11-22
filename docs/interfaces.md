@@ -4,7 +4,7 @@
 > 코드와 이 문서가 다르면 이 문서를 먼저 고치고(PR + 리뷰) 코드를 맞춘다.
 
 - 담당: A (공통 인터페이스 · 내비게이션 · 상태머신)
-- 상태: 초안 (v0.31)
+- 상태: 초안 (v0.32)
 - `TBD` = 아직 미정. 남은 항목은 6장 체크리스트 참고.
 - 본 프로젝트는 시뮬레이션(소프트웨어)만 다룬다.
 
@@ -236,6 +236,7 @@ behavior_server (복구 동작)                        → (기본) /cmd_vel
 - 발행 주기 (2026-11-19 갱신, PR #3): 최소 3 Hz, 목표 10 Hz. 평균이 아니라 순간 최소 주기가 3 Hz 아래로 떨어지지 않아야 한다.
   - 최소 3 Hz 근거 (D, 2026-11-19): 검출 주기별 정렬 모의 시험 15회씩. 3 Hz(처리 지연 0.33 s) 15/15 성공, 1.5 Hz 7/15, 1 Hz 3/15 (검출이 늦게 오는 동안 차체가 너무 돌아 물체가 화면 밖으로 나감). D는 정렬 쪽 지연 보정도 추가 예정.
   - C 실측 (2026-11-19, Gazebo와 함께 실행, Far 자세, WSL CPU): OpenVINO 적용 후 평균 약 4.4 Hz · 최소 3.8 Hz (PyTorch는 평균 약 3.0 Hz · 최소 1.4 Hz, 추론 약 165 ms → 100 ms). 최소 3 Hz 기준 충족, 목표 10 Hz에는 아직 못 미침.
+  - **기본 추론 백엔드 → OpenVINO(f32)로 확정 (A, 2026-11-23)**. 근거: 위 C 실측에서 PyTorch보다 평균·최소 Hz 모두 높음(목표 10 Hz에 더 근접). 7차 모델(`synth_v7_640`)을 OpenVINO(f32)로 재시험한 결과 Near 0.40 m · Pre-grasp 0.35 m 둘 다 핀 검출 100%(이 Mac VM, aarch64, 417/417·436/436) — 다은님 WSL2(x86_64) PC에서도 같은 조합으로 near 16/16 · pre-grasp 8/8 재확인되어 ARM·x86 두 아키텍처 모두 검증됨. 이 Mac VM(aarch64)에서는 OpenVINO가 기본 설정이면 죽고 f32 정밀도 지정이 필요하므로, 기본 백엔드를 OpenVINO로 둘 때는 f32 정밀도까지 기본값에 포함한다. PyTorch는 설정이 더 단순하지만 이 환경들에서 기본값으로 쓴 실측 비교가 없어 보류.
   - 이전 기준 최소 5 Hz (C, 2026-11-09)는 Gazebo 연동 전 C 노트북(WSL, i5-1240P CPU)의 YOLOv8n 추론 시간(640 입력 약 128 ms(약 7.8 Hz), 320 입력 약 73 ms(약 13.6 Hz))으로 정한 값이었다.
 - 수신 측 안전장치 (A): `/perception/target_pose` 수신 측(A)은 `frame_id`가 `'base_link'`와 정확히 일치하지 않거나, x/y/z에 NaN/inf가 있거나, x≤0이면 해당 메시지를 무시한다(구현: f523b1f, 원준님 PR #1 제안 기반).
   - 추가 필터 (A, C 제안 PR #1 2026-11-20, `feat/state-machine` 구현): x가 상한 `target_pose_max_x_m`(기본 2.0 m)보다 크면 무시한다(경계값 2.0 m는 통과). 직전에 통과한 x와 차이가 `target_pose_max_jump_m`(기본 0.1 m) 이상이면(앞뒤 양방향) 무시한다. 걸러진 메시지는 직전 값으로 쓰지 않고, 마지막으로 통과한 메시지 뒤 stamp 기준 `target_pose_max_age_sec`(기본 1.0 s) 넘게 지나면 직전 값을 지우고 처음 메시지처럼 본다(물체를 놓쳤다가 다시 잡았을 때 계속 걸리지 않게). 상한 2.0 m는 far 관측 범위 최대값 기준 1차값이고, C의 실제 검출 가능 거리 측정 후 조정한다.
@@ -531,6 +532,7 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - [x] MoveIt 계획 그룹 → `dofbot_arm` (joint1~5, KDL) (B)
 - [x] MoveIt 기본 자세 → `home` (관절 전부 0, 1자 자세) (B)
 - [x] 검출 발행 주기 Hz → `target_pose` 최소 3 Hz, 목표 10 Hz (3.3). D 정렬 모의 시험 · C OpenVINO 실측으로 5 Hz에서 변경 (PR #3, 2026-11-19)
+- [x] YOLO 기본 추론 백엔드 → OpenVINO(f32) 확정 (A, 2026-11-23, 3.3). PyTorch 대비 Hz 실측 우위 + 이 Mac VM(aarch64) · 다은님 WSL2(x86_64) 양쪽에서 핀 검출 100% 검증. `feat/yolo` 코드 반영은 C 확인 필요
 - [x] 공용 launch 파일에 렌더러 옵션 인자 추가 (A) → `software_gl`, `headless`, `rviz_gpu`, `render_engine` (0장)
 - [ ] 카메라 해상도 (C) — 320×240(현재 테스트 값)과 640×480을 첫 학습 때 비교, RTF 영향도 함께 확인. YOLOv8n CPU 추론은 640 입력 약 7.8 Hz, 320 입력 약 13.6 Hz (C 측정)
 - [x] 상태머신 구현 방식 → 직접 만든 Python 노드 (`mm_task_manager`, `feat/state-machine`). 이동 단계 규칙은 5.5
@@ -596,3 +598,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-23 | v0.29 | 5.5에 `approach_yaw=0` 설계 신규 문서화: 이 VM(ogre2+CPU 렌더링)의 세계 yaw ±11° 안전구간 회색 화면 버그를 회피하기 위해 object 모드 접근 yaw를 0으로 고정, block·bolt 각 N=10 반복 검증(도착·Align 10/10, 회색·충돌 0/10, 안전구간 여유 block 5.6°/bolt 3.6°) 결과와 그 전제인 `yaw_goal_tolerance=0.125`(2026-11-17 변경) 의존성 기록. 6장 체크리스트에 pin·hex_nut 미검증 및 테스트 도구 저장소 반영 위치 미정 항목 추가, 5.5 기존 "목표 yaw=물체를 바라보는 방향" 서술에 이 VM 기준 `approach_yaw=0` 적용 갱신 메모 추가 | A |
 | 2026-11-23 | v0.30 | 5.5에 pin·hex_nut `approach_yaw=0` 각 N=5 후속 검증 결과 추가(도착·Align 5/5, 회색·충돌 0/5, 안전구간 여유 pin 3.7°/hex_nut 4.2°) — 4개 물체(block·pin·hex_nut·bolt) 전부 `approach_yaw=0` 설계 확정으로 상향. hex_nut만 정렬 뒤 거리 오차 부호·크기가 다른 점(−0.2~−1.6mm vs 나머지 +7.7~+9.0mm, 허용 오차 안)은 확인 필요로 기록. 6장 체크리스트 갱신(pin·hex_nut 항목 완료, 테스트 도구는 diagnostics 브랜치 로컬 커밋 `93b05ac`까지 완료·push 전 의존 파일 포함 여부 확인 중으로 갱신) | A |
 | 2026-11-23 | v0.31 | `approach_yaw=0` 상태머신 코드 반영 완료 기록(5.5, 6장): `mission.py`에 `approach_yaw` 필드 추가, `machine.py` `_send_nav`가 `approach_goal`에 전달, 테스트 475개 통과(feat/state-machine, 커밋 전). 같은 작업에서 5.2 재시도용 `standoff_list` 기본값이 하한 위반이던 `[0.25, 0.22, 0.28]`에서 `[0.32, 0.32, 0.35]` placeholder로 교체됨(구체적 순서·조합은 그대로 TBD) — 6장 체크리스트에 기록. 이에 따라 지금 코드의 Nav2 목표 거리(`approach_distance = standoff_list[0] + margin`)가 `standoff_list[0]`(현재 0.32, near `standoff_m` 0.40이 아님)를 써서 0.47 m가 됨을 5.5에 확인 필요로 기록 — 5.6 near/pre-grasp 2단계가 상태머신에 반영되기 전까지는 0.47 m가 실제값(5.6 2단계 자체는 PR #5 확정 전까지 코드 미반영 그대로 유지) | A |
+| 2026-11-23 | v0.32 | 3.3·6장: YOLO 기본 추론 백엔드를 OpenVINO(f32)로 확정(A, 결정 필요 항목 종결). 근거는 기존 C의 Hz 실측(PyTorch 대비 평균·최소 모두 높음)과, 황동 pin 재검출 재시험이 이 Mac VM(aarch64)·다은님 WSL2(x86_64) 양쪽에서 OpenVINO(f32)로 100% 성공한 결과. `feat/yolo` 코드 쪽 실제 기본값 반영은 C 확인 후 진행 | A |
