@@ -42,12 +42,12 @@ mock 결과: `<out_dir>/<scenario>.jsonl` (상태머신 결과), `<out_dir>/<sce
 | `s10_cmd_vel_conflict` | 다른 `/cmd_vel` 발행자 있음 | `NAV_NOT_READY` / `cmd_vel_conflict`, 목표 안 보냄 |
 | `s11_final_stop` | Nav가 끝난 뒤에도 `/nav2/cmd_vel` 발행 | 끝난 뒤 `/cmd_vel`은 0만, 약 1 s 뒤 `task_manager` 종료 |
 | `s12_goal_mode` | goal 모드 (이동 목표 직접 지정) | SUCCEEDED, `nav_goal_mode` `goal` |
-| `s13_object_diagonal` | 물체 (2.0, 1.0), 출발 (1.0, 0) | 목표 (1.7172, 0.7172, 0.7854), 도착 후 물체까지 0.40 m |
-| `s14_object_behind` | 물체 (0.0, -0.5), 출발 (1.0, 0) | 목표 (0.3578, -0.3211, -2.6779) |
-| `s15_object_close` | 물체 (1.2, 0), 출발 (1.0, 0) | 뒤로 물러나는 목표 (0.80, 0, 0) |
+| `s13_object_diagonal` | 물체 (2.0, 1.0), 출발 (1.0, 0) | 목표 (1.53, 1.0, 0) (approach_yaw 0, 출발 방향과 무관), 도착 후 물체까지 0.47 m |
+| `s14_object_behind` | 물체 (0.0, -0.5), 출발 (1.0, 0) | 목표 (-0.47, -0.5, 0) (물체 뒤로 돌아가 +x 방향으로 바라봄) |
+| `s15_object_close` | 물체 (1.2, 0), 출발 (1.0, 0) | 뒤로 물러나는 목표 (0.73, 0, 0) |
 | `s16_full_success` | 정렬 · 파지까지 정상 | SUCCEEDED, ALIGN 동안 `/servoing/cmd_vel`(0.03)이 `/cmd_vel`로 나감 |
-| `s17_ik_retry_success` | `IK_FAILED` 1회 후 성공 | 재정렬 1회 (standoff 0.25 → 0.22), SUCCEEDED |
-| `s18_ik_retry_exhausted` | `IK_FAILED` 3회 | 재정렬 2회 (0.25 → 0.22 → 0.28) 뒤 `IK_FAILED` |
+| `s17_ik_retry_success` | `IK_FAILED` 1회 후 성공 | 재정렬 1회 (standoff 0.32 → 0.32), SUCCEEDED |
+| `s18_ik_retry_exhausted` | `IK_FAILED` 3회 | 재정렬 2회 (0.32 → 0.32 → 0.35) 뒤 `IK_FAILED` |
 | `s19_align_not_found` | 정렬 중 물체 놓침 | `OBJECT_NOT_FOUND`, Grasp 안 보냄 |
 | `s20_align_timeout` | 정렬 서버 응답 없음 | `timeout_sec`(3.0) + 여유(1.0) 뒤 취소 → `ALIGN_TIMEOUT` / `timeout` |
 | `s21_no_target_pose` | 정렬 뒤 `target_pose` 안 옴 | 1.0 s 뒤 `OBJECT_NOT_FOUND` / `target_pose_stale`, Grasp 안 보냄 |
@@ -56,7 +56,7 @@ mock 결과: `<out_dir>/<scenario>.jsonl` (상태머신 결과), `<out_dir>/<sce
 | `s24_target_pose_filtered` | 정렬 뒤 `target_pose`가 차체 뒤쪽(x = -0.1)으로 옴 | 안전장치 필터가 거름(`ignored target_pose` 경고) → 1.0 s 뒤 `OBJECT_NOT_FOUND` / `target_pose_stale`, Grasp 안 보냄 |
 | `s25_cancel_rejected` | Nav 끝나지 않음, 취소 요청 거부 (`hang_reject_cancel`) | `cancel_timeout_sec`(3.0 s) 동안 CANCELING → `NAV_FAILED` / `timeout`, `aborted: true`, `cancel ... not accepted` 경고 1번, 이후 `/cmd_vel` 0 |
 
-S1~S11은 기본 미션(object 모드, 물체 (1.40, 0))으로 돌고, mock 차체가 (1.0, 0) 근처라 목표는 (1.0, 0, 0)이다.
+S1~S11은 기본 미션(object 모드, 물체 (1.40, 0))으로 돌고, 목표는 (0.93, 0, 0)이다 (이동 거리 0.32 + 0.15). mock 차체는 (1.0, 0)에 있어 도착 허용 오차(0.15 m) 안이다.
 
 S16~S24는 `config/mock/full.yaml`(`nav_only: false`, 정렬 제한 3.0 + 1.0 s, 파지 제한 10 s)을 더하고 mock 3개를 같이 띄운다: `mock_align_server`(`/servoing/align`, 호출마다 결과 지정, 정렬 중 `/servoing/cmd_vel` 발행), `mock_grasp_server`(`/grasp/execute`, 호출마다 결과 지정, 받은 목표 기록), `mock_target_pose`(`/perception/target_pose`, `base_link` (0.25, 0, 0.02), 10 Hz, 끌 수 있음). 수동 실행(`mock_nav_only.launch.py`)도 S16~S24면 같은 설정과 mock을 띄우고 `task_manager`를 4 s 뒤에 시작한다. Align/Grasp 목표 기록은 `<out_dir>/<scenario>_align_goals.csv`, `<scenario>_grasp_goals.csv`.
 
@@ -71,13 +71,12 @@ mock 노드: `mock_clock`(`/clock`), `mock_lifecycle`(`is_active`), `mock_tf`(TF
 | 모드 | 파라미터 (map 기준) | 이동 목표 |
 |---|---|---|
 | goal | `goal.x`, `goal.y`, `goal.yaw` | 그대로 보냄 |
-| object | `object.x`, `object.y` | 물체에서 `standoff_list[0]` + `nav_standoff_margin_m`(기본 0.15) 떨어진 곳, 물체를 바라보는 yaw (interfaces.md 5.5) |
+| object | `object.x`, `object.y`, `approach_yaw`(기본 0.0) | 물체에서 `standoff_list[0]` + `nav_standoff_margin_m`(기본 0.15)만큼 `approach_yaw` 반대쪽으로 떨어진 곳, yaw = `approach_yaw` (물체를 정면으로 바라봄, interfaces.md 5.5) |
 
-- object 모드의 접근 방향은 출발 위치 → 물체 방향이다. 출발 위치는 시작 확인을 통과할 때의 `map → base_link`이고, 목표는 이때 한 번만 계산한다 (재정렬 때 다시 계산하지 않음)
+- object 모드의 접근 방향은 미션의 `approach_yaw`(map 기준 rad, 기본 0.0)다. 0.0은 이 VM(ogre2+CPU 렌더링)의 카메라 회색 화면 버그(세계 yaw ±11° 밖)를 피하려고 고정한 값으로, 4개 물체 반복 시험으로 확정했다 (interfaces.md 5.5, 2026-11-23). `yaw_goal_tolerance` 0.125 rad 이하 유지가 전제다. 목표는 시작 확인을 통과할 때 한 번만 계산한다 (재정렬 때 다시 계산하지 않음)
+- `approach_yaw`는 YAML에 `0.0`처럼 소수로 쓴다 (double 파라미터라 `0`으로 쓰면 타입 오류). NaN · inf면 시작하지 않고 에러, 범위 제한은 없음(`wrap_angle`로 정리)
 - 출발 위치를 못 읽으면 시작 확인에서 `tf_stale`로 기다리고, 시간이 지나면 `NAV_NOT_READY`
-- 차체가 물체 위에 있어 방향을 정할 수 없으면(1 mm 미만) 차체가 바라보는 방향으로 접근한다
 - 차체가 이미 물체에 가까우면 뒤로 물러나는 목표가 된다
-- 접근 방향을 직접 정하는 것은 `geometry.approach_goal(..., approach_yaw=...)` 인자만 있고, 미션 YAML 파라미터는 아직 없다 (확장 예정)
 - 도착 확인은 실제로 보낸 목표와 비교한다. 결과 기록에 `goal`(보낸 목표), `nav_goal_mode`, `object`, `approach_distance`, `arrival.object_dist`(도착 후 물체까지 거리)를 남긴다
 
 ## 노드 `task_manager`
@@ -184,6 +183,6 @@ Nav2가 SUCCEEDED를 돌려줘도 `map→base_link`를 목표와 비교한다 (�
 | Align `timeout_sec` 값 | `align_timeout_sec` | D |
 | Grasp 제한 시간 · 코드 | `grasp_timeout_sec`, `grasp_timeout_code` | B |
 | `target_pose` 신선도 | `target_pose_max_age_sec` | C, B |
-| 시도별 `standoff_m` | `standoff_list` (0.22, 0.28은 임시 자리값) | B |
+| 시도별 `standoff_m` | `standoff_list` [0.32, 0.32, 0.35] placeholder (하한 0.32 m 이상, 정확한 조합 TBD, 인수인계 참고) | A |
 | 관측 자세 담당 | `observe_pose_required` | B, C |
 | Align/Grasp 액션 타입 | `project_interfaces` 생성 전에는 `nav_only: true` | B, D |

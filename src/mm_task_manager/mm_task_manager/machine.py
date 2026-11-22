@@ -334,7 +334,7 @@ class TaskMachine:
     def _send_nav(self, now, robot_pose):
         if self._object_mode:
             self._nav_goal = approach_goal((self.m.object_x, self.m.object_y), robot_pose,
-                                           self.m.approach_distance)
+                                           self.m.approach_distance, approach_yaw=self.m.approach_yaw)
         self._enter(State.NAVIGATE, now)
         self._deadline = now + self.m.nav_timeout_sec
         x, y, yaw = self._nav_goal

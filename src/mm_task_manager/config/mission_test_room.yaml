@@ -4,12 +4,13 @@ task_manager:
     use_sim_time: true
 
     # 미션: 이동 목표는 goal.{x,y,yaw}(직접 지정)와 object.{x,y}(물체 위치) 중 정확히 하나
-    # object.*면 물체에서 standoff_list[0] + nav_standoff_margin_m 떨어져 물체를 바라보는 목표를
-    # 출발 위치 → 물체 방향으로 계산한다 (interfaces.md 5.5)
-    object.x: 1.40     # TODO: 물체 배치 정해지면 수정 (map 기준, m). 스폰 (0, 0)에서 목표 (1.0, 0, 0)
+    # object.*면 물체에서 standoff_list[0] + nav_standoff_margin_m 떨어져 approach_yaw 방향으로
+    # 물체를 바라보는 목표를 계산한다 (interfaces.md 5.5)
+    object.x: 1.40     # TODO: 물체 배치 정해지면 수정 (map 기준, m). 목표 (0.93, 0, 0) (= 1.40 - (0.32 + 0.15))
     object.y: 0.0
     target_class: block
     nav_standoff_margin_m: 0.15   # standoff_m보다 0.15 m 멀리 (PR #1 D 의견 반영, 0.10에서 변경)
+    approach_yaw: 0.0             # 접근 yaw (rad, map). 0 고정: 카메라 회색 화면 회피 (interfaces.md 5.5, 2026-11-23 확정). 0이 아니라 0.0으로 (double 파라미터)
 
     # project_interfaces(Align/Grasp) 생성 전에는 true: 도착 확인까지만 하고 끝냄
     nav_only: true
@@ -47,7 +48,7 @@ task_manager:
 
     # 재정렬 (interfaces.md 5.2)
     max_realign: 2
-    standoff_list: [0.25, 0.22, 0.28]       # 0.25는 B 제안 초기 시험값. 0.22, 0.28은 TODO(B) 임시 자리값
+    standoff_list: [0.32, 0.32, 0.35]       # placeholder: 하한 0.32 m 이상(5.2), 정확한 조합 TBD, 인수인계 참고. 0.32 중복이라 시작 시 경고 1번
 
     # 관측 자세
     observe_pose_required: false            # B가 액션으로 처리 예정, 당분간 false

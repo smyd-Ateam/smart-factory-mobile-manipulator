@@ -1,9 +1,10 @@
-# S13 물체가 대각선: 출발 (1.0, 0) → 물체 (2.0, 1.0), 거리 0.40
-# → 목표 (1.7172, 0.7172, 0.7854), 도착 후 물체까지 0.40 m
+# S13 물체가 대각선: 출발 (1.0, 0) → 물체 (2.0, 1.0), 거리 0.47, approach_yaw 0
+# → 목표 (1.53, 1.0, 0), 도착 후 물체까지 0.47 m (출발 방향과 무관)
 task_manager:
   ros__parameters:
     object.x: 2.0
     object.y: 1.0
+    approach_yaw: 0.0
 mock_nav_server:
   ros__parameters:
     teleport_on_success: true

@@ -10,7 +10,7 @@ task_manager:
     wait_state_subscribers: 1
 mock_tf:
   ros__parameters:
-    x: 1.0          # mock 차체 위치 = 기본 미션 목표 (1.0, 0, 0)
+    x: 1.0          # mock 차체 위치. 기본 미션 목표 (0.93, 0, 0)에서 0.07 m (도착 허용 0.15 m 안), S12 goal 모드 목표 (1.0, 0, 0)
     y: 0.0
     yaw: 0.0
 mock_nav_server:

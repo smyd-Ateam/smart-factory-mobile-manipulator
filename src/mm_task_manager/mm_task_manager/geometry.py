@@ -37,7 +37,8 @@ def approach_goal(object_xy, robot_pose, distance, approach_yaw=None):
     """물체에서 distance만큼 떨어져 물체를 바라보는 목표 (x, y, yaw). 모두 같은 프레임(map).
 
     접근 방향은 기본으로 출발 위치(robot_pose) → 물체 방향이다 (interfaces.md 5.5).
-    approach_yaw를 주면 그 방향으로 접근한다 (확장용, 미션 YAML에는 아직 없음).
+    approach_yaw를 주면 그 방향으로 접근한다. 상태머신은 미션의 approach_yaw(기본 0.0)를 항상 넘긴다
+    (interfaces.md 5.5, 2026-11-23 approach_yaw=0 확정).
     차체가 물체 위에 있어 방향을 정할 수 없으면 차체가 바라보는 방향을 쓴다.
     """
     ox, oy = object_xy

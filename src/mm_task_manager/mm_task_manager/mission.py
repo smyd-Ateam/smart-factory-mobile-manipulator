@@ -13,7 +13,7 @@ class Mission:
     target_class: str
 
     # 이동 목표: goal.*(직접 지정, map 기준)와 object.*(물체 위치, map 기준) 중 정확히 하나.
-    # object.*면 물체에서 approach_distance만큼 떨어져 물체를 바라보는 목표를 계산 (5.5)
+    # object.*면 물체에서 approach_distance만큼 떨어져 approach_yaw 방향으로 물체를 바라보는 목표를 계산 (5.5)
     goal_x: Optional[float] = None
     goal_y: Optional[float] = None
     goal_yaw: Optional[float] = None
@@ -22,6 +22,10 @@ class Mission:
     # 이동 거리 = standoff_list[0] + 이 값 (5.5). 0.10 → 0.15: 도착 오차(최대 0.126 m)가 물체 쪽으로
     # 생겨도 차체 앞면과 물체 사이 약 6 cm 남도록 (PR #1 D 의견)
     nav_standoff_margin_m: float = 0.15
+    # object 모드 접근 방향 (map 기준 yaw, rad). 이동 목표 yaw = approach_yaw, 물체는 그 정면.
+    # 0.0: 이 VM(ogre2+CPU 렌더링)의 카메라 회색 화면 버그(세계 yaw ±11° 밖) 회피. 4개 물체 반복 검증 후 확정
+    # (interfaces.md 5.5, 2026-11-23). yaw_goal_tolerance 0.125 rad 이하 유지 전제. 범위는 geometry.wrap_angle이 정리
+    approach_yaw: float = 0.0
 
     nav_only: bool = True
 
@@ -53,8 +57,9 @@ class Mission:
     target_pose_max_jump_m: float = 0.1
 
     max_realign: int = 2
-    # 0.25는 B 제안 초기 시험값, 0.22 · 0.28은 TODO(B) 임시 자리값
-    standoff_list: List[float] = field(default_factory=lambda: [0.25, 0.22, 0.28])
+    # 재정렬 시도별 standoff_m (5.2). 하한 0.32 m 이상 확정(2026-11-21~22, 이전 0.25/0.22/0.28은 하한 미달로 무효).
+    # 지금 값은 placeholder: 정확한 조합 TBD, 인수인계 참고. 0.32가 두 번이라 시작할 때 중복 경고가 1번 나옴(의도)
+    standoff_list: List[float] = field(default_factory=lambda: [0.32, 0.32, 0.35])
 
     observe_pose_required: bool = False   # TODO(B, C)
     # 정렬 중 Near→Pre-grasp 전환 거리 (m, 물체 수평거리). 0.35m 희선님 확정(PR #1, 2026-11-17).
@@ -79,6 +84,7 @@ _OBJECT_PARAMS = {'object.x': 'object_x', 'object.y': 'object_y'}
 _DOTTED = {**_GOAL_PARAMS, **_OBJECT_PARAMS}
 
 _FLOAT_FIELDS = ('goal_x', 'goal_y', 'goal_yaw', 'object_x', 'object_y', 'nav_standoff_margin_m',
+                 'approach_yaw',
                  'ready_timeout_sec', 'ready_min_wait_sec',
                  'final_zero_sec', 'tf_max_age_sec',
                  'nav_timeout_sec', 'cancel_timeout_sec', 'settle_sec', 'arrival_xy_tol',
@@ -150,6 +156,9 @@ def _validate(m, group):
             raise ValueError(f'{name} must be a finite number (got {getattr(m, field_name)})')
     if not m.target_class:
         raise ValueError('target_class must not be empty')
+    # 범위 제약은 없음 (wrap_angle이 정리). NaN · inf만 거부
+    if not math.isfinite(m.approach_yaw):
+        raise ValueError(f'approach_yaw must be a finite number (got {m.approach_yaw})')
     for f in _POSITIVE_FIELDS:
         # NaN이면 아래 <= 0 비교가 False라 통과하고, 시간 비교(now > NaN)가 영영 참이 안 된다
         if not math.isfinite(getattr(m, f)):

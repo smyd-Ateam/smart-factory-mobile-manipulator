@@ -292,7 +292,7 @@ def test_future_map_odom_stamp_is_fresh():
 def test_arrival_ok_sends_align_with_first_standoff():
     m = make(nav_only=False)
     goal = to_align(m)
-    assert (goal.target_class, goal.standoff_m, goal.timeout_sec) == ('block', 0.25, 30.0)
+    assert (goal.target_class, goal.standoff_m, goal.timeout_sec) == ('block', 0.32, 30.0)
 
 
 @pytest.mark.parametrize('code, expected', [
@@ -331,7 +331,7 @@ def test_grasp_success():
     assert m.state == State.SUCCEEDED
     rec = record_of(cmds)
     assert rec['realign_count'] == 0
-    assert rec['standoffs_used'] == [0.25]
+    assert rec['standoffs_used'] == [0.32]
 
 
 def test_realign_twice_then_success():
@@ -348,11 +348,11 @@ def test_realign_twice_then_success():
         cmds = m.handle(AlignResult(now=now + 5, token=align.token, success=True))
         grasp = of_type(cmds, SendGraspGoal)[0]
         now += 10
-    assert standoffs == [0.22, 0.28]
+    assert standoffs == [0.32, 0.35]
     rec = record_of(m.handle(GraspResult(now=now, token=grasp.token, success=True)))
     assert m.state == State.SUCCEEDED
     assert rec['realign_count'] == 2
-    assert rec['standoffs_used'] == [0.25, 0.22, 0.28]
+    assert rec['standoffs_used'] == [0.32, 0.32, 0.35]
 
 
 def test_ik_failed_three_times_fails():
@@ -501,9 +501,12 @@ def test_tokens_are_unique_per_goal():
 
 OBJECT = (2.0, 1.0)
 START = (1.0, 0.0, 0.3)          # 출발 위치 (map→base_link), yaw는 계산에 안 씀
-D = 0.25 + 0.15                  # standoff_list[0] + nav_standoff_margin_m (기본 0.15)
+D = 0.32 + 0.15                  # standoff_list[0] + nav_standoff_margin_m (기본 0.15)
+# 기본 approach_yaw = 0.0 (interfaces.md 5.5, 2026-11-23): 물체의 -x 쪽에서 +x 방향으로 바라봄, 출발 위치와 무관
+EXPECTED_GOAL = (OBJECT[0] - D, OBJECT[1], 0.0)
+# approach_yaw를 출발→물체 방향(pi/4)으로 직접 주면 예전(출발 방향 접근)과 같은 목표
 U = (1 / math.sqrt(2), 1 / math.sqrt(2))
-EXPECTED_GOAL = (OBJECT[0] - D * U[0], OBJECT[1] - D * U[1], math.pi / 4)
+EXPECTED_GOAL_DIAG = (OBJECT[0] - D * U[0], OBJECT[1] - D * U[1], math.pi / 4)
 
 
 def make_object(**overrides):
@@ -530,6 +533,31 @@ def test_object_mode_sends_computed_goal():
     assert m.state == State.NAVIGATE
     goal = of_type(cmds, SendNavGoal)[0]
     assert (goal.x, goal.y, goal.yaw) == pytest.approx(EXPECTED_GOAL)
+    assert math.hypot(OBJECT[0] - goal.x, OBJECT[1] - goal.y) == pytest.approx(D)
+
+
+def test_object_mode_default_approach_yaw_ignores_start_position():
+    # approach_yaw 0이면 출발 위치가 달라도 목표가 같다
+    goals = []
+    for pose in (START, (0.0, 1.0, 0.0), (3.0, 2.0, -2.0)):
+        m = make_object()
+        m.handle(Start(now=0.0))
+        goals.append(of_type(m.handle(ready(1.0, robot_pose=pose)), SendNavGoal)[0])
+    for g in goals:
+        assert (g.x, g.y, g.yaw) == pytest.approx(EXPECTED_GOAL)
+
+
+@pytest.mark.parametrize('yaw, expected', [
+    (math.pi / 4, EXPECTED_GOAL_DIAG),
+    (math.pi, (OBJECT[0] + D, OBJECT[1], -math.pi)),                      # wrap_angle 범위 [-pi, pi)
+    (-math.pi / 2, (OBJECT[0], OBJECT[1] + D, -math.pi / 2)),
+    (2 * math.pi + 0.1, (OBJECT[0] - D * math.cos(0.1), OBJECT[1] - D * math.sin(0.1), 0.1)),   # wrap_angle
+])
+def test_object_mode_explicit_approach_yaw(yaw, expected):
+    m = make_object(approach_yaw=yaw)
+    m.handle(Start(now=0.0))
+    goal = of_type(m.handle(ready(1.0, robot_pose=START)), SendNavGoal)[0]
+    assert (goal.x, goal.y, goal.yaw) == pytest.approx(expected)
     assert math.hypot(OBJECT[0] - goal.x, OBJECT[1] - goal.y) == pytest.approx(D)
 
 

@@ -25,14 +25,14 @@ def test_defaults():
     assert m.cmd_rate_hz == 10.0
     assert m.cmd_input_timeout_sec == 0.5
     assert m.max_realign == 2
-    assert m.standoff_list == [0.25, 0.22, 0.28]
+    assert m.standoff_list == [0.32, 0.32, 0.35]   # 하한 0.32 이상 placeholder (5.2, 조합 TBD)
     assert m.align_sm_timeout_code == 'ALIGN_TIMEOUT'
     assert m.grasp_timeout_code == 'UNKNOWN'
     assert m.ready_min_wait_sec == 1.0
     assert m.final_zero_sec == 1.0
     assert m.target_pose_max_x_m == 2.0      # C 제안 1차값 (PR #1 2026-11-20)
     assert m.target_pose_max_jump_m == 0.1
-    assert warnings == []
+    assert len(warnings) == 1 and 'standoff_list' in warnings[0]   # placeholder [0.32, 0.32, 0.35] 중복 경고 (의도)
 
 
 @pytest.mark.parametrize('key', ['ready_min_wait_sec', 'final_zero_sec'])
@@ -171,10 +171,10 @@ def _load_config(path):
 
 def test_config_file_is_valid():
     m, warnings = mission_from_dict(_load_config(CONFIG))
-    assert m.standoff_list == [0.25, 0.22, 0.28]
+    assert m.standoff_list == [0.32, 0.32, 0.35]
     assert m.nav_goal_mode == 'object'          # 물체 위치로 이동 목표 계산 (5.5)
-    assert (m.object_x, m.object_y) == (1.40, 0.0)     # 스폰 (0, 0)에서 목표 (1.0, 0, 0)
-    assert warnings == []
+    assert (m.object_x, m.object_y) == (1.40, 0.0)     # 목표 (0.93, 0, 0)
+    assert len(warnings) == 1 and 'standoff_list' in warnings[0]   # placeholder [0.32, 0.32, 0.35] 중복 경고 (의도)
 
 
 def test_goal_mode_config_file_is_valid():
@@ -243,7 +243,7 @@ def test_object_must_be_finite(key, value):
 def test_nav_standoff_margin():
     m, _ = mission_from_dict(object_params())
     assert m.nav_standoff_margin_m == 0.15                       # PR #1 D 의견 (0.10 → 0.15)
-    assert m.approach_distance == pytest.approx(0.25 + 0.15)    # standoff_list[0] + 0.15
+    assert m.approach_distance == pytest.approx(0.32 + 0.15)    # standoff_list[0] + 0.15
     m, _ = mission_from_dict(object_params(nav_standoff_margin_m=0.20,
                                            standoff_list=[0.30, 0.25, 0.35]))
     assert m.approach_distance == pytest.approx(0.50)
@@ -260,3 +260,34 @@ def test_pregrasp_switch_distance_defaults_to_provisional_constant():
 def test_pregrasp_switch_distance_can_be_overridden():
     m, _ = mission_from_dict(base_params(pregrasp_switch_distance_m=0.4))
     assert m.pregrasp_switch_distance_m == 0.4
+
+
+# ---- approach_yaw (object 모드 접근 방향, interfaces.md 5.5 2026-11-23 확정) ----
+
+def test_approach_yaw_default_zero():
+    m, _ = mission_from_dict(object_params())
+    assert m.approach_yaw == 0.0
+
+
+def test_approach_yaw_in_test_room_yaml_is_zero():
+    params = _load_config(CONFIG)
+    assert params['approach_yaw'] == 0.0
+    assert isinstance(params['approach_yaw'], float)   # ROS double 파라미터 (0이면 int로 읽혀 타입 오류)
+
+
+def test_approach_yaw_int_converted_to_float():
+    m, _ = mission_from_dict(object_params(approach_yaw=1))
+    assert m.approach_yaw == 1.0 and isinstance(m.approach_yaw, float)
+
+
+@pytest.mark.parametrize('value', [-10.0, -3.5, 3.5, 10.0])
+def test_approach_yaw_no_range_limit(value):
+    # 범위 정리는 geometry.wrap_angle이 맡음
+    m, _ = mission_from_dict(object_params(approach_yaw=value))
+    assert m.approach_yaw == value
+
+
+@pytest.mark.parametrize('value', [float('nan'), float('inf'), float('-inf')])
+def test_approach_yaw_must_be_finite(value):
+    with pytest.raises(ValueError, match='approach_yaw'):
+        mission_from_dict(object_params(approach_yaw=value))
