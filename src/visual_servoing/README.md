@@ -106,6 +106,8 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q test
 
 `/servoing/cmd_vel`은 목표 실행 중에만 발행하고, 끝나면 0을 한 번 보낸다.
 
+`/camera/depth/image_raw`, `/camera/camera_info`는 RELIABLE(KEEP_LAST 5)로 받는다. 약 1 MB 이미지를 BEST_EFFORT(`sensor_data`)로 받으면 ros_gz_bridge에서 오는 프레임이 40~60 %만 도착했다 (WSL, PR #1 RGB-D 브리지 진단 2026-11-22). 발행 쪽이 BEST_EFFORT면 연결되지 않으니 RELIABLE로 발행해야 한다.
+
 ## 노드
 
 | 노드 | 입력 | 출력 |

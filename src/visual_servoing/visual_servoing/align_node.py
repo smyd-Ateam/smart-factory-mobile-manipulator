@@ -19,7 +19,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.signals import SignalHandlerOptions
 from rclpy.time import Time
 from sensor_msgs.msg import CameraInfo, Image
@@ -42,6 +42,11 @@ def stamp_ns(stamp):
 DEFAULT_OBJECT_SHAPES = ['block:0.0125:0.04', 'pin:0.010:0.05',
                          'hex_nut:0.015:0.015', 'bolt:0.006:0.06']
 NO_SHAPE = Cylinder(0.0, 1.0)   # 모르는 클래스: 잰 점을 그대로 씀
+# 깊이·camera_info는 RELIABLE로 받는다. 약 1 MB 이미지를 BEST_EFFORT(sensor_data)로 받으면
+# ros_gz_bridge(RELIABLE 발행)에서 오는 프레임이 WSL에서도 40~60 %만 도착했다 (RELIABLE은 100 %,
+# PR #1 RGB-D 브리지 진단, 2026-11-22).
+CAMERA_QOS = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=5,
+                        reliability=ReliabilityPolicy.RELIABLE)
 
 
 class AlignNode(Node):
@@ -85,9 +90,9 @@ class AlignNode(Node):
         self.create_subscription(Detection2DArray, '/perception/detections',
                                  self.on_detections, 10, callback_group=group)
         self.create_subscription(Image, '/camera/depth/image_raw',
-                                 self.on_depth, qos_profile_sensor_data, callback_group=group)
+                                 self.on_depth, CAMERA_QOS, callback_group=group)
         self.create_subscription(CameraInfo, '/camera/camera_info',
-                                 self.on_camera_info, qos_profile_sensor_data,
+                                 self.on_camera_info, CAMERA_QOS,
                                  callback_group=group)
 
         self.server = ActionServer(
