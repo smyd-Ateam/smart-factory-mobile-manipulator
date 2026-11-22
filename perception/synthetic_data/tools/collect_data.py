@@ -57,6 +57,9 @@ CLOSE_PITCH_DEG = (45.0, 90.0)
 CLOSE_DIST_M = (0.15, 0.55)
 STAND_BIAS_CLOSE = 0.7     # 서 있는 자세(roll=pitch=0) 확률
 ROLL_RAD = 0.08            # 약간의 기울어짐
+# --wide: 로봇팔이 취할 수 있는 거의 모든 카메라 각도·거리 (주행 중, 초기 자세 포함)
+WIDE_PITCH_DEG = (15.0, 90.0)
+WIDE_DIST_M = (0.15, 1.2)
 
 
 # ---------------------------------------------------------------------------
@@ -76,11 +79,14 @@ def rpy_to_quat(roll, pitch, yaw):
 # ---------------------------------------------------------------------------
 # 장면 무작위 생성
 # ---------------------------------------------------------------------------
-def sample_scene(rng, pitch_deg=PITCH_DEG, dist_m=DIST_M, stand_bias=None):
-    """카메라 1개 + 모든 물체의 자세를 정한다. 쓰지 않는 물체는 멀리 대기시킨다."""
+def sample_scene(rng, pitch_deg=PITCH_DEG, dist_m=DIST_M, stand_bias=None, use_mats=True, yaw_deg=180.0,
+                 empty=False):
+    """카메라 1개 + 모든 물체의 자세를 정한다. 쓰지 않는 물체는 멀리 대기시킨다.
+    empty=True 이면 부품은 하나도 놓지 않는다 (빈 바닥 + 방해물만 있는 배경 이미지)."""
     pitch = math.radians(rng.uniform(*pitch_deg))
     dist = dist_m[0] + (dist_m[1] - dist_m[0]) * rng.random() ** 1.5   # 가까운 쪽에 더 많이
-    yaw = rng.uniform(-math.pi, math.pi)
+    # 카메라가 바라보는 방향. yaw_deg=30이면 +x(햇빛이 오는 쪽)를 ±30° 안에서 바라봄 = 역광
+    yaw = math.radians(rng.uniform(-yaw_deg, yaw_deg))
     roll = rng.uniform(-ROLL_RAD, ROLL_RAD)
     tx, ty = rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0)   # 바라보는 바닥 점
 
@@ -93,11 +99,11 @@ def sample_scene(rng, pitch_deg=PITCH_DEG, dist_m=DIST_M, stand_bias=None):
 
     # 물체 수: 가까이 볼수록 적게
     max_obj = max(1, min(6, 1 + int(dist * 5)))
-    n_obj = rng.randint(1, max_obj)
+    n_obj = 0 if empty else rng.randint(1, max_obj)
     spread = max(0.08, 0.4 * dist)
 
     # 바닥: 매트 5종 중 하나 또는 매트 없음 → 부품과 바닥의 색 대비가 매번 달라짐
-    mat = rng.choice(MATS + [None])
+    mat = rng.choice(MATS + [None]) if use_mats else None
     base_z = MAT_THICK if mat else 0.0
     for k, m in enumerate(MATS):
         poses[m] = ((tx, ty, MAT_THICK / 2, 0.0, 0.0, rng.uniform(-math.pi, math.pi))
@@ -243,13 +249,13 @@ def boxes_to_yolo(boxes, w=IMG_W, h=IMG_H, min_px=3):
             continue
         lines.append("%d %.6f %.6f %.6f %.6f" % (label - 1, (x0 + x1) / 2 / w,
                                                  (y0 + y1) / 2 / h, bw / w, bh / h))
-    return lines
+    return list(dict.fromkeys(lines))      # 똑같은 박스가 두 번 오면 한 번만 쓴다
 
 
 # ---------------------------------------------------------------------------
 # ROS2 이미지 수신
 # ---------------------------------------------------------------------------
-def make_image_node():
+def make_image_node(image_topic="/boxes_image"):
     import rclpy
     from rclpy.node import Node
     from rclpy.qos import QoSProfile
@@ -260,7 +266,7 @@ def make_image_node():
             super().__init__("synth_data_collector")
             self.lock = threading.Lock()
             self.frames = collections.OrderedDict()   # stamp -> msg
-            self.create_subscription(Image, "/boxes_image", self.cb, QoSProfile(depth=20))
+            self.create_subscription(Image, image_topic, self.cb, QoSProfile(depth=20))
 
         def cb(self, msg):
             t = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
@@ -322,16 +328,28 @@ def main():
     ap.add_argument("--val-ratio", type=float, default=0.1)
     ap.add_argument("--settle", type=float, default=0.4, help="물체를 옮긴 뒤 기다리는 시간 (s)")
     ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--image-topic", default="/boxes_image",
+                    help="학습 이미지를 받을 ROS 토픽. 팀 카메라와 같은 rgbd_camera로 찍으려면 /rgbd_camera/image")
     ap.add_argument("--topdown", action="store_true",
                     help="위에서 가까이 내려다보는 장면만 수집 (숙임각 70~90°, 거리 0.15~0.45 m)")
+    ap.add_argument("--team", action="store_true",
+                    help="팀 월드 조건으로 수집: 조명 고정(collect_team.sdf 그대로), 바닥 매트 사용 안 함")
+    ap.add_argument("--backlit", action="store_true",
+                    help="역광 장면: 카메라가 햇빛 쪽(+x)을 ±30° 안에서 바라봄. 부품의 보이는 옆면이 그늘짐 (--team과 같이 사용)")
     ap.add_argument("--close", action="store_true",
                     help="근거리(Near~Pre-grasp) 장면 수집 (숙임각 45~90°, 거리 0.15~0.55 m, 서 있는 자세 70%%)")
+    ap.add_argument("--empty-ratio", type=float, default=0.0,
+                    help="부품 없이 빈 바닥(+방해물)만 찍는 배경 이미지 비율 0~1. 1.0이면 전부 배경 이미지")
+    ap.add_argument("--wide", action="store_true",
+                    help="카메라 각도·거리를 넓게 (숙임각 15~90°, 거리 0.15~1.2 m). 배경 이미지 수집에 사용")
     args = ap.parse_args()
     stand_bias = None
     if args.close:
         pitch_deg, dist_m, stand_bias = CLOSE_PITCH_DEG, CLOSE_DIST_M, STAND_BIAS_CLOSE
     elif args.topdown:
         pitch_deg, dist_m = TOPDOWN_PITCH_DEG, TOPDOWN_DIST_M
+    elif args.wide:
+        pitch_deg, dist_m = WIDE_PITCH_DEG, WIDE_DIST_M
     else:
         pitch_deg, dist_m = PITCH_DEG, DIST_M
 
@@ -346,12 +364,12 @@ def main():
     start = sum(len(os.listdir(os.path.join(out, "images", s))) for s in ("train", "val"))
     rng = random.Random(args.seed if args.seed is not None else time.time_ns())
 
-    node = make_image_node()
-    print("[수집] /boxes_image 기다리는 중...")
+    node = make_image_node(args.image_topic)
+    print("[수집] %s 기다리는 중..." % args.image_topic)
     t0 = time.time()
     while node.latest_stamp() is None:
         if time.time() - t0 > 30:
-            sys.exit("[오류] 30초 동안 /boxes_image가 안 들어옵니다. Gazebo와 브리지가 실행 중인지 확인하세요.")
+            sys.exit("[오류] 30초 동안 %s가 안 들어옵니다. Gazebo와 브리지가 실행 중인지 확인하세요." % args.image_topic)
         time.sleep(0.2)
     print("[수집] 이미지 수신 확인. %d장부터 %d장 수집 시작 → %s" % (start, args.num, out))
 
@@ -367,7 +385,9 @@ def main():
     light_warned = False
     idx = start
     while saved < args.num:
-        poses, light, info = sample_scene(rng, pitch_deg, dist_m, stand_bias)
+        empty = rng.random() < args.empty_ratio
+        poses, light, info = sample_scene(rng, pitch_deg, dist_m, stand_bias, use_mats=not args.team,
+                                          yaw_deg=30.0 if args.backlit else 180.0, empty=empty)
         t_ref = node.latest_stamp() or 0.0
         if not set_poses(poses):
             fails += 1
@@ -379,33 +399,56 @@ def main():
             time.sleep(2.0)   # Gazebo가 숨 돌릴 시간
             continue
         streak = 0
-        if not set_light(light) and not light_warned:   # 실패해도 계속 진행 (조명만 안 바뀜)
+        if not args.team and not set_light(light) and not light_warned:   # 실패해도 계속 진행 (조명만 안 바뀜)
             print("[경고] 조명 변경이 안 됩니다. 기본 조명으로 계속 수집합니다.")
             light_warned = True
         time.sleep(args.settle)
 
-        res = None
-        for _ in range(6):        # 옮긴 뒤에 찍힌 프레임인지 시간으로 확인
-            res = read_boxes()
-            if res and res[0] >= t_ref + 0.25:
-                break
-            res = None
-        if res is None:
-            fails += 1
-            streak += 1
-            print("[경고] /boxes를 못 받았습니다 (연속 %d회)" % streak)
-            if streak >= 15:
-                sys.exit("[오류] 연속 15번 실패했습니다. logs/gazebo.log를 확인하세요. 다시 실행하면 이어서 모읍니다.")
-            continue
-        stamp, boxes = res
-        msg = node.find(stamp)
-        if msg is None:
-            fails += 1
-            streak += 1
-            print("[경고] 박스와 같은 시각의 이미지를 못 찾았습니다 (연속 %d회)" % streak)
-            if streak >= 15:
-                sys.exit("[오류] 연속 15번 실패했습니다. 다시 실행하면 이어서 모읍니다.")
-            continue
+        if empty:
+            # 부품이 없으니 정답 박스도 없다. 옮긴 뒤(t_ref + 0.25 이후)에 찍힌 이미지만 받으면 된다.
+            msg, t_end = None, time.time() + 6.0
+            while time.time() < t_end:
+                st = node.latest_stamp()
+                if st is not None and st >= t_ref + 0.25:
+                    msg = node.find(st, tol=1e-6, wait=0.5)
+                    if msg is not None:
+                        break
+                time.sleep(0.05)
+            if msg is None:
+                fails += 1
+                streak += 1
+                print("[경고] 옮긴 뒤의 이미지를 못 받았습니다 (연속 %d회)" % streak)
+                if streak >= 15:
+                    sys.exit("[오류] 연속 15번 실패했습니다. 다시 실행하면 이어서 모읍니다.")
+                continue
+            boxes = []
+        else:
+            for _ in range(6):        # 옮긴 뒤에 찍힌 프레임인지 시간으로 확인
+                res = read_boxes()
+                if res and res[0] >= t_ref + 0.25:
+                    break
+                res = None
+            if res is None:
+                fails += 1
+                streak += 1
+                print("[경고] /boxes를 못 받았습니다 (연속 %d회)" % streak)
+                if streak >= 15:
+                    sys.exit("[오류] 연속 15번 실패했습니다. logs/gazebo.log를 확인하세요. 다시 실행하면 이어서 모읍니다.")
+                continue
+            stamp, boxes = res
+            # 같은 카메라(/boxes_image)면 stamp가 정확히 같고, 다른 카메라(rgbd)면 렌더 시각이 조금 다를 수 있다.
+            # 장면은 옮긴 뒤 멈춰 있으므로, 옮긴 뒤(t_ref + 0.25 이후)에 찍힌 프레임이면 같은 장면이다.
+            tol = 0.02 if args.image_topic == "/boxes_image" else 0.15
+            msg = node.find(stamp, tol=tol)
+            if msg is not None and msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9 < t_ref + 0.25:
+                msg = None
+            if msg is None:
+                fails += 1
+                streak += 1
+                print("[경고] 박스와 같은 시각의 이미지를 못 찾았습니다 (연속 %d회)" % streak)
+                if streak >= 15:
+                    sys.exit("[오류] 연속 15번 실패했습니다. 다시 실행하면 이어서 모읍니다.")
+                continue
         streak = 0
 
         split = "val" if random.Random(idx).random() < args.val_ratio else "train"

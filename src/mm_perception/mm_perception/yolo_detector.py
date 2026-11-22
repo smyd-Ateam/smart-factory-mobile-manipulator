@@ -12,6 +12,12 @@
 패키지로 빌드하지 않고 바로 실행할 수도 있다:
     python3 yolo_detector.py --ros-args -p model:=$HOME/yolo_models/synth_v1_640.pt -p use_sim_time:=true
 
+빈 박스 제거 기준 (박스 안에서 배경과 다른 픽셀 비율, 기본 0.10, 0이면 끔):
+    ... -p min_box_fill:=0.10
+
+이미지 구독 QoS (기본 best_effort = 기존과 같음):
+    ... -p image_reliability:=reliable -p image_depth:=2
+
 OpenVINO 모델에서 정밀도/추가 설정이 필요할 때 (예: ARM Mac VM):
     ... -p model:=$HOME/yolo_models/synth_v2_640_openvino_model -p ov_precision:=f32
     ... -p ov_config:="NUM_STREAMS=1,INFERENCE_NUM_THREADS=4"
@@ -49,6 +55,56 @@ def image_msg_to_bgr(msg):
     if enc == "mono8":
         return cv2.cvtColor(arr, cv2.COLOR_GRAY2BGR)
     return arr.copy()
+
+
+def parse_reliability(value):
+    """image_reliability 파라미터 → "best_effort" 또는 "reliable". 그 외 값은 ValueError."""
+    v = str(value).strip().lower().replace("-", "_")
+    if v in ("best_effort", "besteffort", "sensor_data"):
+        return "best_effort"
+    if v == "reliable":
+        return "reliable"
+    raise ValueError("image_reliability는 best_effort 또는 reliable 이어야 합니다 (입력: %r)" % value)
+
+
+def box_fill_ratio(gray, x0, y0, x1, y1, ring=4, diff=12.0):
+    """박스 안에서 배경과 다른 픽셀의 비율 (0~1). 바깥 테두리를 못 구하면 None.
+
+    배경 밝기 = 박스 바로 바깥 테두리(두께 ring px)의 중앙값,
+    배경과 다름 = |밝기 - 배경| > diff.
+    """
+    h, w = gray.shape[:2]
+    x0, y0 = max(0, int(x0)), max(0, int(y0))
+    x1, y1 = min(w, int(round(x1))), min(h, int(round(y1)))
+    if x1 - x0 < 2 or y1 - y0 < 2:
+        return None
+    X0, Y0, X1, Y1 = max(0, x0 - ring), max(0, y0 - ring), min(w, x1 + ring), min(h, y1 + ring)
+    outer = gray[Y0:Y1, X0:X1]
+    mask = np.ones(outer.shape, bool)
+    mask[y0 - Y0:y1 - Y0, x0 - X0:x1 - X0] = False
+    if mask.sum() < 8:
+        return None
+    bg = float(np.median(outer[mask]))
+    return float((np.abs(gray[y0:y1, x0:x1] - bg) > diff).mean())
+
+
+def drop_empty_boxes(bgr, dets, min_fill):
+    """박스 안이 거의 비어 있는(배경과 다른 픽셀 비율 < min_fill) 검출을 버린다.
+
+    카메라가 벽·하늘처럼 무늬 없는 면을 볼 때 모델이 화면 가운데에 hex_nut을 0.95로 잡는
+    오검출이 있었다 (6·7차 모델, 초기 자세). 화면 가운데의 흐린 세로줄 하나 때문에 채움 비율이
+    0.03은 넘었고 0.10에서 걸러졌다. 팀 rgbd 학습 라벨 3,877개는 모두 0.27 이상이다.
+    반환: (남은 검출, 버린 개수). min_fill <= 0 이면 아무것도 버리지 않는다.
+    """
+    if min_fill <= 0 or not dets:
+        return dets, 0
+    gray = (bgr if bgr.ndim == 2 else bgr.mean(axis=2)).astype(np.float32)
+    kept = []
+    for d in dets:
+        r = box_fill_ratio(gray, d[2], d[3], d[4], d[5])
+        if r is None or r >= min_fill:
+            kept.append(d)
+    return kept, len(dets) - len(kept)
 
 
 def result_to_dets(result, names, conf_min):
@@ -153,7 +209,7 @@ def main(args=None):
     import cv2
     import rclpy
     from rclpy.node import Node
-    from rclpy.qos import qos_profile_sensor_data
+    from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
     from sensor_msgs.msg import Image
     from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
     from ultralytics import YOLO
@@ -173,6 +229,16 @@ def main(args=None):
             self.save_every = max(1, int(p("save_every", 10).value))
             ov_precision = str(p("ov_precision", "").value)   # OpenVINO 모델일 때만: "", f32, f16, bf16
             ov_config = str(p("ov_config", "").value)         # 추가 설정 "KEY=VAL,KEY2=VAL2"
+            # 이미지 구독 QoS. ros_gz_bridge는 RELIABLE로 발행하므로 둘 다 연결된다.
+            #   best_effort: 기존과 같음 (qos_profile_sensor_data와 동일: BEST_EFFORT, KEEP_LAST 5)
+            #   reliable   : 큰 이미지(약 1 MB)가 중간에 빠지지 않게 재전송. 발행 쪽이 BEST_EFFORT면 연결 안 됨
+            try:
+                self.reliability = parse_reliability(p("image_reliability", "best_effort").value)
+            except ValueError as e:
+                raise SystemExit("[오류] %s" % e)
+            self.image_depth = max(1, int(p("image_depth", 5).value))
+            # 빈 박스 제거 기준 (박스 안에서 배경과 다른 픽셀 비율). 0이면 끔
+            self.min_box_fill = float(p("min_box_fill", 0.10).value)
 
             if not os.path.exists(self.model_path):
                 raise SystemExit("[오류] 모델 파일이 없습니다: %s" % self.model_path)
@@ -197,7 +263,12 @@ def main(args=None):
 
             self.pub_det = self.create_publisher(Detection2DArray, "/perception/detections", 10)
             self.pub_img = self.create_publisher(Image, "/perception/detections/image", 2)
-            self.create_subscription(Image, image_topic, self.on_image, qos_profile_sensor_data)
+            qos = QoSProfile(
+                history=HistoryPolicy.KEEP_LAST, depth=self.image_depth,
+                reliability=(ReliabilityPolicy.RELIABLE if self.reliability == "reliable"
+                             else ReliabilityPolicy.BEST_EFFORT),
+                durability=DurabilityPolicy.VOLATILE)
+            self.create_subscription(Image, image_topic, self.on_image, qos)
 
             # 최신 프레임 1장만 들고 있다가 별도 스레드에서 처리 (밀린 프레임은 버림)
             self.lock = threading.Lock()
@@ -208,13 +279,17 @@ def main(args=None):
             self.t_last_log = time.time()
             self.n_proc = 0
             self.n_at_log = 0
+            self.recv_at_log = 0
+            self.win_frames = collections.Counter()    # 이번 로그 구간에서 각 클래스가 검출된 프레임 수
+            self.age_ms = collections.deque(maxlen=50)  # 처리 끝난 시점 - 이미지 stamp (sim time)
             self.stop = threading.Event()
             self.thread = threading.Thread(target=self.worker, daemon=True)
             self.thread.start()
 
             self.get_logger().info(
-                "시작: model=%s imgsz=%d conf=%.2f device=%s | 구독 %s → 발행 /perception/detections"
-                % (os.path.basename(self.model_path), self.imgsz, self.conf, self.device, image_topic))
+                "시작: model=%s imgsz=%d conf=%.2f device=%s | 구독 %s (QoS %s, depth %d) → 발행 /perception/detections"
+                % (os.path.basename(self.model_path), self.imgsz, self.conf, self.device, image_topic,
+                   self.reliability.upper(), self.image_depth))
 
         def on_image(self, msg):
             with self.lock:
@@ -247,6 +322,8 @@ def main(args=None):
             ms = (time.perf_counter() - t0) * 1000
             self.infer_ms.append(ms)
             dets = result_to_dets(res, self.names, self.conf)
+            dets, n_empty = drop_empty_boxes(bgr, dets, self.min_box_fill)
+            self.stats["empty_box"] += n_empty
 
             self.pub_det.publish(fill_detection_array(
                 Detection2DArray(), msg.header, dets, Detection2D, ObjectHypothesisWithPose))
@@ -254,6 +331,12 @@ def main(args=None):
             self.n_proc += 1
             for d in dets:
                 self.class_count[d[0]] += 1
+            for c in set(d[0] for d in dets):
+                self.win_frames[c] += 1
+            now_ns = self.get_clock().now().nanoseconds
+            stamp_ns = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
+            if now_ns > 0 and stamp_ns > 0:
+                self.age_ms.append((now_ns - stamp_ns) / 1e6)
 
             want_save = self.save_dir and self.n_proc % self.save_every == 0
             if self.pub_image or want_save:
@@ -273,12 +356,19 @@ def main(args=None):
             if now - self.t_last_log >= 5.0:
                 dt = now - self.t_last_log
                 n_new = self.n_proc - self.n_at_log
+                r_new = self.stats["received"] - self.recv_at_log
                 self.get_logger().info(
-                    "처리 %.1f Hz | 추론 평균 %.0f ms | 수신 %d, 버린 프레임 %d | 누적 검출: %s"
-                    % (n_new / dt, float(np.mean(self.infer_ms)), self.stats["received"],
-                       self.stats["dropped"],
+                    "[%s] 수신 %.1f Hz | 처리 %.1f Hz | 추론 평균 %.0f ms | 지연(stamp→발행) 평균 %.0f ms | "
+                    "검출 프레임 %s / %d | 빈 박스 제거 %d | 누적 수신 %d, 버린 프레임 %d | 누적 검출: %s"
+                    % (self.reliability.upper(), r_new / dt, n_new / dt, float(np.mean(self.infer_ms)),
+                       float(np.mean(self.age_ms)) if self.age_ms else float("nan"),
+                       ", ".join("%s %d" % (c, self.win_frames[c]) for c in CLASSES), n_new,
+                       self.stats["empty_box"],
+                       self.stats["received"], self.stats["dropped"],
                        ", ".join("%s %d" % (c, self.class_count[c]) for c in CLASSES)))
                 self.n_at_log = self.n_proc
+                self.recv_at_log = self.stats["received"]
+                self.win_frames.clear()
                 self.t_last_log = now
 
     rclpy.init(args=args)

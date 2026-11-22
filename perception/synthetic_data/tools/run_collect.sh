@@ -10,19 +10,21 @@ set -e
 cd "$(dirname "$0")/.."
 
 NUM=${1:-200}
+WORLD_FILE=${WORLD_FILE:-worlds/collect.sdf}   # 팀 월드 조건: WORLD_FILE=worlds/collect_team.sdf
+IMAGE_TOPIC=${IMAGE_TOPIC:-/boxes_image}       # 팀 카메라와 같은 rgbd로 찍기: IMAGE_TOPIC=/rgbd_camera/image
 OUT=${2:-$HOME/yolo_dataset}
 mkdir -p "$OUT/logs"
 
 source /opt/ros/humble/setup.bash
 export IGN_GAZEBO_RESOURCE_PATH=$PWD/models:${IGN_GAZEBO_RESOURCE_PATH}
 
-echo "[1/3] Gazebo 서버 시작 (로그: $OUT/logs/gazebo.log)"
-LIBGL_ALWAYS_SOFTWARE=1 setsid ign gazebo -s -r worlds/collect.sdf > "$OUT/logs/gazebo.log" 2>&1 &
+echo "[1/3] Gazebo 서버 시작: $WORLD_FILE (로그: $OUT/logs/gazebo.log)"
+LIBGL_ALWAYS_SOFTWARE=1 setsid ign gazebo -s -r "$WORLD_FILE" > "$OUT/logs/gazebo.log" 2>&1 &
 GZ_PID=$!
 
-echo "[2/3] 브리지 시작 (로그: $OUT/logs/bridge.log)"
+echo "[2/3] 브리지 시작: $IMAGE_TOPIC (로그: $OUT/logs/bridge.log)"
 setsid ros2 run ros_gz_bridge parameter_bridge \
-  "/boxes_image@sensor_msgs/msg/Image[ignition.msgs.Image" > "$OUT/logs/bridge.log" 2>&1 &
+  "${IMAGE_TOPIC}@sensor_msgs/msg/Image[ignition.msgs.Image" > "$OUT/logs/bridge.log" 2>&1 &
 BR_PID=$!
 
 cleanup() {
@@ -37,4 +39,4 @@ trap cleanup EXIT
 
 sleep 8
 echo "[3/3] 수집 시작: ${NUM}장 → $OUT"
-python3 tools/collect_data.py --num "$NUM" --out "$OUT" "${@:3}"
+python3 tools/collect_data.py --num "$NUM" --out "$OUT" --image-topic "$IMAGE_TOPIC" "${@:3}"
