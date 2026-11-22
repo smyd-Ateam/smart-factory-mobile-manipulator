@@ -281,6 +281,7 @@ float64 bearing_error_rad
 - `error_code`: 5.3 표의 이름을 그대로 사용. 정렬 중 물체를 놓친 경우에도 `OBJECT_NOT_FOUND` 반환
 - 상태머신이 보내는 `timeout_sec` 기본값: 30 s (D 확인, PR #1 2026-11-19. YOLO 3 Hz 조건 모의 시험에서 정렬 최대 약 9.7 s). 파라미터 `align_timeout_sec`로 바꿀 수 있다.
 - 시간 제한 (D 확인, 2026-11-09): 서버는 `timeout_sec`이 되면 직접 `ALIGN_TIMEOUT`을 반환한다. 상태머신은 `timeout_sec`보다 몇 초(임시 5 s) 더 기다려도 결과가 없으면 목표를 취소하고 `ALIGN_TIMEOUT`으로 기록한다. 취소되면 정렬 쪽은 속도 0을 보내고 끝낸다.
+- 정렬 완료 판정(CHECKING) 중 검출 끊김 허용 시간 (D 확정, 2026-11-22): 차체가 멈춘 뒤 판정하는 동안은 최대 3 s(`lost_timeout_stopped` 파라미터)까지 검출이 끊겨도 기다리고, 그 사이 다시 검출되면 판정을 계속한다. 차체가 움직이는 동안은 기존대로 1 s. 허용 시간을 넘기면 `OBJECT_NOT_FOUND`로 처리(5.3).
 
 ### 4.2 `Grasp` 액션 (B 확정)
 
@@ -363,6 +364,7 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | `UNKNOWN` | 기타 | — |
 
 - `OBJECT_NOT_FOUND` 판정 기준 (C 제안): score 0.5 이상인 목표 클래스 검출이 연속 N프레임(예: 10프레임) 동안 없으면 발생. 수치는 첫 모델 학습 후 조정
+  - 정렬 완료 판정(CHECKING) 중에는 별도 시간 기준을 쓴다 — 멈춘 뒤 최대 3 s, 움직이는 중엔 1 s 끊기면 `OBJECT_NOT_FOUND` (D 확정, 4.1)
 - B는 `IK_FAILED`, `GRASP_MISS`, `GRASP_SLIP`을 사용한다 (`GRASP_FAILED`는 따로 만들지 않음, B 확인)
 - 세부 원인(detail): A는 같은 코드 안에서도 원인을 나눠 결과 기록(5.5)에 남긴다. `NAV_NOT_READY`: `lifecycle_inactive`, `cmd_vel_conflict` 등 / `NAV_FAILED`: `rejected`, `aborted`, `timeout`, `arrival_check`, `tf_stale` / `UNKNOWN`: `clock_stopped` / `OBJECT_NOT_FOUND`: `target_pose_stale` (정렬 뒤 1.0 s 안에 쓸 `target_pose`가 없음, 3.3 미검출 규칙)
 - 상태머신이 `Align` 결과를 `timeout_sec` + 여유 안에 못 받으면 취소하고 `ALIGN_TIMEOUT`으로 기록한다 (D 확인, 4.1). `Grasp` 제한 시간은 임시 60 s (B 확인), 넘었을 때 쓸 코드는 미정
@@ -530,6 +532,8 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - [x] Nav2 도착 허용 오차 → 그대로 둠. 대신 Nav2 목표를 near 1차 `standoff_m`(0.40 m) 기준으로 margin을 둬 약 0.50 m로 둠 (D, 5.5. margin 근거가 2026-11-21에 갱신됨 — 5.5 참고)
 - [x] 목표 근처 맴돌기 → Nav2 설정은 그대로 둠. 다가오는 방향과 목표 yaw가 크게 다르면(약 180°) 도착 후 제자리 회전 중 맴돌 수 있음 (DWB와 goal checker가 서로 다른 시각의 map→odom을 쓰고, 1 Hz 재계획마다 둘 다 초기화됨. Humble 1.1.20 소스로 확인, 2026-11-13). object 모드는 목표 yaw가 물체를 바라보는 방향(= 다가오는 방향)이라 큰 회전이 거의 없고, 남는 yaw 오차는 D 정렬(시작 범위 ±0.35 rad)이 받는다. goal 모드에서 목표 yaw를 정할 때는 다가오는 방향에 가깝게 정한다 (A)
 - [ ] 팀 코드 라이선스 (전원) — MIT 또는 Apache-2.0 중 선택. D는 둘 다 괜찮음
+- [x] 정렬 완료 판정(CHECKING) 중 검출 끊김 허용 시간 → 멈춘 뒤 최대 3 s(`lost_timeout_stopped`), 움직이는 중엔 1 s (D 확정, 2026-11-22, 4.1 · 5.3)
+- [ ] 같은 클래스 다수 물체 구분: Align Goal에 `expected_position`(PointStamped) · `expected_radius_m` 필드 추가 제안 (D, `project_interfaces` 변경 필요) — A 조건부 동의, 좌표계 일치 · 반경 안 미검출 시 처리 · 기존 클래스 필터와의 관계 3가지 명확화 요청, PR #1 댓글, 답변 대기
 
 ---
 
@@ -575,3 +579,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-21 | v0.25 | 6장 체크리스트를 현재 상태와 맞춤: 관절 이름 `gripper_joint`, joint2 · joint4 해결 근거, 관측 자세 관절 값 완료(SRDF · 액션은 하위 항목), `project_interfaces` 머지 완료, 그리퍼 항목 중복 정리, 새 미정 항목 추가(pre-grasp 숙임각 69.3°, grasp 카메라 TF, 정렬 완료 거리, 차체 치수, 같은 클래스 구분에 C 제안 추가). 2.2 카메라 오프셋 상태, 3.3 x 상한 · 점프 필터, 4.1 `timeout_sec` 기본 30 s, 5.5 이동 목표 거리 예시를 0.35 m 기준으로, 5.6 pre-grasp 자세 변경 메모 추가 | A |
 | 2026-11-21 | v0.26 | B의 v0.25 리뷰(PR #1) 반영: 5.6 pre-grasp 관절 값 joint4 -1.435083 → -1.190737 표에 반영, 카메라 TF도 69.3° 기준 실측값으로 갱신(xyz (0.303, 0.001, 0.150), rpy (-2.778, 0, -1.571)), Near→Pre-grasp 전환 설명을 "차체 정지·팔만 이동, 완료 후 align 재호출" 기준으로 정정. 5.7 카메라 주기 30 Hz → 10 Hz(실제 설정값)로 정정, 관련 실측치는 참고용으로 표시(10 Hz 기준 재실측 필요). 2.4 팔 · 그리퍼 inertial, 그리퍼 링크 · 관절 · `ee_link` 항목 완료로 변경, Gazebo 그리퍼 mimic 관절 연동 검증 항목 신설. 6장 체크리스트: pre-grasp 숙임각 69.3° 반영 항목 완료 처리 | A |
 | 2026-11-22 | v0.27 | 정렬 완료 거리를 near(1차 Align)/pre-grasp(2차 Align) 2단계 값으로 분리: near `standoff_m` 0.35→0.40 m, pre-grasp는 0.35 m 유지(5.6). 근거: near 0.35 m에서는 pin 검출 score가 0.5 임계값에 못 미치는 경우가 있었고, 0.40 m는 near·pre-grasp 69.3° 화면 가시 범위 양쪽에 들어옴 (D 제안 PR #1 id 7066535320, C 동의 id 7075009411, 2026-11-21~22). 5.2 재시도별 `standoff_m` 하한을 0.32 m 이상으로 명시(0.29 m는 pre-grasp 화면 가시 범위 밖이라 제외, D·C 확인). 5.5 Nav2 목표 거리 기준을 near `standoff_m`(0.40 m) 기준으로 재정리, 목표값 약 0.50 m는 유지되나 margin 근거가 "도착 오차 0.15 m"에서 "near 화면 가시 범위 0.10 m"로 바뀌어 두 근거가 완전히 일치하진 않음(확인 필요로 남김). 6장 체크리스트: 기본 `standoff_m`, 재시도별 `standoff_m`, 정렬 완료 거리, Nav2 도착 허용 오차 항목 갱신. 같은 클래스 다수 물체 구분 방법은 B 의견 대기 중이라 미반영(그대로 둠) | A |
+| 2026-11-23 | v0.28 | 정렬 완료 판정(CHECKING) 중 검출 끊김 허용 시간 추가: 차체 정지 중 최대 3 s(`lost_timeout_stopped`), 움직이는 중엔 1 s, 넘으면 `OBJECT_NOT_FOUND`(D 확정, 2026-11-22, 4.1 · 5.3). 같은 클래스 다수 물체 구분용 Align Goal `expected_position`·`expected_radius_m` 필드 추가 제안(D)은 A가 방향엔 조건부 동의했으나 좌표계 일치·반경 안 미검출 처리·기존 클래스 필터와의 관계 3가지 명확화를 요청한 상태라 본문에는 아직 반영하지 않고 6장 체크리스트에만 진행 상황 기록(`project_interfaces` 변경 필요, D 답변 대기) | A |
