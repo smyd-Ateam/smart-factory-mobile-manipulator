@@ -7,6 +7,9 @@ ROS에 의존하지 않는다. 액션 서버는 제어 주기마다 tick()을 �
 1. 제한 시간 초과 → ALIGN_TIMEOUT
 2. 새 측정을 lost_timeout 동안 못 받음 → OBJECT_NOT_FOUND
    (시작 시점부터 한 번도 못 본 경우, 정렬 중 놓친 경우 모두)
+   정지 후 판정 중(차체 정지)에는 lost_timeout_stopped까지 기다린다.
+   멈춰 있으면 검출이 잠깐 끊겨도 위험하지 않다 (A 통합 시험에서 CHECKING 중 1 s 끊김으로
+   실패, PR #1 2026-11-22)
 3. 측정값이 max_age보다 오래됨 → 정지하고 기다림
 4. 이동 중: P제어. 허용 범위 * stop_ratio 안이면 정지
 5. 정지 후: 정지 시각 + settle 이후에 찍힌 새 측정만 센다.
@@ -28,6 +31,7 @@ OBJECT_NOT_FOUND = 'OBJECT_NOT_FOUND'
 @dataclass
 class SessionParams:
     lost_timeout: float = 1.0      # s, 새 측정이 이만큼 안 오면 놓침. C 기준(10프레임)과 맞춘 값
+    lost_timeout_stopped: float = 3.0   # s, 정지 후 판정 중에 쓰는 놓침 기준
     max_age: float = 1.0           # s, 이보다 오래 지연된 측정으로는 움직이지 않음 (2.4 기준)
     settle: float = 0.1            # s, 정지 명령 후 차체가 멈출 때까지 기다리는 시간
     required_frames: int = 3       # 정지 후 연속으로 허용 범위 안이어야 하는 프레임 수
@@ -71,7 +75,9 @@ class AlignSession:
         if fresh_enough and measurement[0] != self.last_stamp:
             self.last_stamp = measurement[0]
             self.last_received = now
-        if now - self.last_received > self.sp.lost_timeout:
+        lost_after = (self.sp.lost_timeout if self.stopped_at is None
+                      else max(self.sp.lost_timeout, self.sp.lost_timeout_stopped))
+        if now - self.last_received > lost_after:
             return self._end(FAILED, OBJECT_NOT_FOUND)
         if not fresh_enough:
             return TickResult(RUNNING, phase='WAIT_DETECTION')

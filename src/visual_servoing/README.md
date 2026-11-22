@@ -99,7 +99,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q test
 |---|---|
 | 정지 후 찍힌 프레임 3장 연속 허용 범위 안 | `success=true`, `error_code=""` |
 | `timeout_sec` 초과 | `ALIGN_TIMEOUT` |
-| 새 검출을 1초(`lost_timeout`) 동안 못 받음 (시작부터 못 본 경우, 정렬 중 놓친 경우) | `OBJECT_NOT_FOUND` |
+| 새 검출을 1초(`lost_timeout`) 동안 못 받음 (시작부터 못 본 경우, 정렬 중 놓친 경우). 정지 후 판정 중(차체 정지)에는 3초(`lost_timeout_stopped`) | `OBJECT_NOT_FOUND` |
 | 취소 요청 | 0 속도 발행 후 CANCELED |
 | 빈 `target_class`, `standoff_m <= 0`, `timeout_sec <= 0`, 이미 실행 중인 목표가 있음 | 목표 거부 |
 | 노드 종료 (Ctrl+C, SIGTERM) | 실행 중인 목표 중단, 0 속도 발행 후 종료 |
@@ -117,7 +117,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q test
 | `mock_trials` (시험용) | 위 노드들 (`scene:=mock` 또는 `sim`) | 시험 결과 요약, CSV |
 | `sim_scene_node` (Gazebo 시험용) | `/servoing/sim_boxes`, `/servoing/sim_base_pose` | `/perception/detections` (정답 박스), `/servoing/sim_object_in_base`, 서비스 `/servoing/sim_reset` |
 
-`align_node` 파라미터: 제어 `k_v`, `k_w`, `max_v`, `max_w`, `bearing_gate`, `tol_range`, `tol_bearing`, `stop_ratio` / 판정 `lost_timeout`, `max_age`, `settle`, `required_frames` / 기타 `score_min`, `control_rate`, `feedback_rate`, `object_shapes`, `floor_z`, `track_gate_px`.
+`align_node` 파라미터: 제어 `k_v`, `k_w`, `max_v`, `max_w`, `bearing_gate`, `tol_range`, `tol_bearing`, `stop_ratio` / 판정 `lost_timeout`, `lost_timeout_stopped`, `max_age`, `settle`, `required_frames` / 기타 `score_min`, `control_rate`, `feedback_rate`, `object_shapes`, `floor_z`, `track_gate_px`.
 
 - `object_shapes`: 깊이는 bbox 중심이 닿은 물체 표면까지라서, 물체를 세워진 원기둥(`"클래스:반지름:높이"`, m)으로 보고 중심축 위치를 계산한다 (`object_model.py`). 옆에서 보면 반지름만큼, 위에서 보면 거의 0만큼 보정된다. 기본 block 0.0125/0.04, pin 0.010/0.05, hex_nut 0.015/0.015, bolt 0.006/0.06 (feat/yolo 치수). 모의 입력(`mock_align.launch.py`)은 깊이가 중심까지라 반지름 0으로 둔다. `floor_z`는 `base_link` 기준 바닥 높이 (-0.05).
 - 같은 클래스가 여러 개면: 첫 프레임은 화면 가운데 세로줄에 가장 가까운 검출, 그 뒤로는 직전 박스에 가장 가까운 검출을 따라간다. 직전 박스에서 `track_gate_px`(150 px)보다 멀면 갈아타지 않고 놓친 것으로 본다 (`tracking.py`).

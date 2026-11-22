@@ -24,6 +24,9 @@ from visual_servoing.sim_model import label_to_class, set_pose_request, yaw_from
 
 OPTICAL_FRAME = 'camera_optical_frame'
 SET_POSE_TIMEOUT_MS = 3000
+# ign CLI(ruby)는 CPU 부하가 크면(Gazebo + YOLO) 뜨는 데만 몇 초 걸려서 넉넉히 기다리고 다시 시도한다
+SET_POSE_PROCESS_TIMEOUT_S = 15.0
+SET_POSE_ATTEMPTS = 3
 
 
 class SimSceneNode(Node):
@@ -95,17 +98,22 @@ class SimSceneNode(Node):
         cmd = ['ign', 'service', '-s', f'/world/{self.p("world")}/set_pose',
                '--reqtype', 'ignition.msgs.Pose', '--reptype', 'ignition.msgs.Boolean',
                '--timeout', str(SET_POSE_TIMEOUT_MS), '--req', req]
-        try:
-            out = subprocess.run(cmd, capture_output=True, text=True,
-                                 timeout=SET_POSE_TIMEOUT_MS / 1000 + 2)
-        except (OSError, subprocess.TimeoutExpired) as e:
-            response.success, response.message = False, f'set_pose 실패: {e}'
-            self.get_logger().error(response.message)
-            return response
-        response.success = out.returncode == 0 and 'true' in out.stdout
-        response.message = f'pose=({x:.3f}, {y:.3f}, {yaw:.3f}) {out.stdout.strip()}'
-        if not response.success:
-            self.get_logger().error(f'set_pose 실패: {out.stdout} {out.stderr}')
+        error = ''
+        for attempt in range(1, SET_POSE_ATTEMPTS + 1):
+            try:
+                out = subprocess.run(cmd, capture_output=True, text=True,
+                                     timeout=SET_POSE_PROCESS_TIMEOUT_S)
+            except (OSError, subprocess.TimeoutExpired) as e:
+                error = str(e)
+            else:
+                if out.returncode == 0 and 'true' in out.stdout:
+                    response.success = True
+                    response.message = f'pose=({x:.3f}, {y:.3f}, {yaw:.3f})'
+                    return response
+                error = f'{out.stdout.strip()} {out.stderr.strip()}'
+            self.get_logger().warn(f'set_pose 시도 {attempt}/{SET_POSE_ATTEMPTS} 실패: {error[-200:]}')
+        response.success, response.message = False, f'set_pose 실패: {error[-200:]}'
+        self.get_logger().error(response.message)
         return response
 
     def on_log(self):

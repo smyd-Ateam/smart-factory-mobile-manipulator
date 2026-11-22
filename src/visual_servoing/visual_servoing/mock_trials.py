@@ -73,7 +73,7 @@ class Trials(Node):
         prm = Parameter(name='robot_start', value=ParameterValue(
             type=ParameterType.PARAMETER_DOUBLE_ARRAY, double_array_value=list(pose)))
         self.wait(self.set_params.call_async(SetParameters.Request(parameters=[prm])), 5.0)
-        res = self.wait(self.reset.call_async(Trigger.Request()), 10.0)
+        res = self.wait(self.reset.call_async(Trigger.Request()), 60.0)   # sim: ign CLI 재시도 포함
         return res is not None and res.success
 
     def run(self):

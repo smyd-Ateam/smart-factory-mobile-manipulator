@@ -10,7 +10,7 @@ from visual_servoing.geometry import (matrix_to_quat, optical_rotation_in_base,
 from visual_servoing.mock_model import (CameraMount, object_in_base, observe,
                                         step_unicycle, true_error)
 from visual_servoing.session import (ALIGN_TIMEOUT, FAILED, OBJECT_NOT_FOUND, RUNNING,
-                                     SUCCEEDED, AlignSession)
+                                     SUCCEEDED, AlignSession, SessionParams)
 
 CP = ControlParams()
 STANDOFF = 0.25
@@ -125,3 +125,42 @@ def test_same_frame_not_counted_twice():
     r = s.tick(0.50, (0.35, STANDOFF, 0.0))
     assert r.status == SUCCEEDED
     assert math.isclose(r.e_r, 0.0, abs_tol=1e-9)
+
+
+def test_short_gap_while_stopped_is_not_lost():
+    """정지 후 판정 중(차체 정지)에는 검출이 1 s 넘게 끊겨도 lost_timeout_stopped까지 기다린다."""
+    s = AlignSession(STANDOFF, 30.0, 0.0)
+    s.tick(0.0, (0.0, STANDOFF, 0.0))                 # 정지 범위 안 → 정지
+    r = s.tick(0.2, (0.15, STANDOFF, 0.0))            # 정지 후 1장
+    assert r.phase == 'CHECKING' and s.good_frames == 1
+    for now in (0.5, 1.0, 1.5, 2.0):                  # 1.8 s 동안 새 측정 없음
+        r = s.tick(now, (0.15, STANDOFF, 0.0))
+        assert r.status == RUNNING and (r.vx, r.wz) == (0.0, 0.0)
+    s.tick(2.1, (2.05, STANDOFF, 0.0))
+    r = s.tick(2.3, (2.25, STANDOFF, 0.0))
+    assert r.status == SUCCEEDED
+
+
+def test_long_gap_while_stopped_is_lost():
+    s = AlignSession(STANDOFF, 30.0, 0.0)
+    s.tick(0.0, (0.0, STANDOFF, 0.0))
+    s.tick(0.2, (0.15, STANDOFF, 0.0))
+    r = s.tick(3.3, (0.15, STANDOFF, 0.0))            # 마지막 새 측정(0.2 s) 뒤 3.1 s
+    assert r.status == FAILED and r.error_code == OBJECT_NOT_FOUND
+
+
+def test_gap_while_moving_uses_short_timeout():
+    """이동 중에는 기존처럼 lost_timeout(1 s)으로 판단한다."""
+    s = AlignSession(STANDOFF, 30.0, 0.0)
+    r = s.tick(0.0, (0.0, STANDOFF + 0.10, 0.0))
+    assert r.phase == 'MOVING'
+    r = s.tick(1.2, (0.0, STANDOFF + 0.10, 0.0))
+    assert r.status == FAILED and r.error_code == OBJECT_NOT_FOUND
+
+
+def test_stopped_timeout_equal_to_lost_timeout_keeps_old_behavior():
+    s = AlignSession(STANDOFF, 30.0, 0.0, params=SessionParams(lost_timeout_stopped=1.0))
+    s.tick(0.0, (0.0, STANDOFF, 0.0))
+    s.tick(0.2, (0.15, STANDOFF, 0.0))
+    r = s.tick(1.3, (0.15, STANDOFF, 0.0))
+    assert r.status == FAILED and r.error_code == OBJECT_NOT_FOUND

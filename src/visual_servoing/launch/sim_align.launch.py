@@ -59,8 +59,9 @@ PIN_GEOMETRY = '<cylinder><radius>0.01</radius><length>0.05</length></cylinder>'
 BLOCK_SWAPS = [
     ('<pose>0 0 0.025 0 0 0</pose>', '<pose>0 0 0.02 0 0 0</pose>'),
     (PIN_GEOMETRY, '<box><size>0.025 0.025 0.04</size></box>'),
-    ('<ambient>0.80 0.80 0.82 1</ambient>', '<ambient>0.15 0.35 0.75 1</ambient>'),
-    ('<diffuse>0.80 0.80 0.82 1</diffuse>', '<diffuse>0.15 0.35 0.75 1</diffuse>'),
+    ('<ambient>0.55 0.45 0.12 1</ambient>', '<ambient>0.15 0.35 0.75 1</ambient>'),
+    ('<diffuse>0.78 0.65 0.20 1</diffuse>', '<diffuse>0.15 0.35 0.75 1</diffuse>'),
+    ('<specular>0.95 0.85 0.45 1</specular>', '<specular>0.3 0.3 0.3 1</specular>'),
     ('<label>2</label>', '<label>1</label>'),
 ]
 
