@@ -233,10 +233,13 @@ def main(args=None):
                 try:
                     self.process(msg)
                 except Exception as e:   # 한 프레임 오류로 노드가 죽지 않게
-                    if not self.stop.is_set():
+                    # 종료 중(Ctrl+C, timeout)에 나는 발행 오류는 무시한다
+                    if not self.stop.is_set() and rclpy.ok():
                         self.get_logger().error("처리 실패: %s" % e)
 
         def process(self, msg):
+            if self.stop.is_set() or not rclpy.ok():
+                return
             bgr = image_msg_to_bgr(msg)
             t0 = time.perf_counter()
             res = self.model.predict(bgr, imgsz=self.imgsz, conf=self.conf,
