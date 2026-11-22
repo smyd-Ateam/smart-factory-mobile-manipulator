@@ -4,7 +4,7 @@
 > 코드와 이 문서가 다르면 이 문서를 먼저 고치고(PR + 리뷰) 코드를 맞춘다.
 
 - 담당: A (공통 인터페이스 · 내비게이션 · 상태머신)
-- 상태: 초안 (v0.29)
+- 상태: 초안 (v0.30)
 - `TBD` = 아직 미정. 남은 항목은 6장 체크리스트 참고.
 - 본 프로젝트는 시뮬레이션(소프트웨어)만 다룬다.
 
@@ -416,11 +416,12 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
   - 배경: 이 개발 VM(Mac+UTM, ogre2 + CPU/software 렌더링)에서는 카메라가 world yaw 기준 `|yaw| 8~11°`를 넘는 특정 방향을 볼 때 항상 회색 화면이 되는 렌더링 버그가 있다(원인: 엔진/소프트웨어 렌더링 조합 자체로 추정, 수정하지 않기로 결정). 안전 구간은 world yaw 0/90/180/270° 각각 중심 `±11°`뿐이라, 물체를 정면(0°)으로 보고 접근하면 이 안전 구간 안에 들어간다.
   - 검증 결과 (block·bolt 각 N=10, Near standoff 0.40 m, 7차 모델, RELIABLE QoS): 둘 다 Nav2 도착 10/10, Align 1차 10/10 성공. 도착 yaw는 물체마다 한쪽으로 치우침(무작위 아님) — block −2.26°~−5.36°(평균 −4.06°), bolt +6.59°~+7.44°(평균 +6.97°). 안전 구간(11°)까지 남은 최소 여유는 block 5.6°, bolt 3.6°. 카메라 회색 감지·충돌 징후 0/10.
   - **도착 yaw가 치우치는 이유 및 `yaw_goal_tolerance` 의존성**: Nav2가 `yaw_goal_tolerance` 안에 들어오는 즉시 멈추기 때문에, 접근 방향에서 돌아오는 쪽 끝에서 서는 경향이 있다(무작위 분산이 아님). 도착 yaw의 상한은 사실상 `yaw_goal_tolerance` + 위치 추정 오차로 정해진다. 지금 `src/mm_navigation/config/nav2_params.yaml`의 `yaw_goal_tolerance: 0.125`(7.16°, 2026-11-17 정차 오차 실험으로 0.25→0.125 변경, 5.5 참고)를 전제로 측정한 값이다.
-  - **조건부 확정 (A, 이 VM 기준)**: 위 결과로 block·bolt는 `approach_yaw=0` 설계를 확정한다. 단:
+  - **pin·hex_nut 후속 검증 (A, 2026-11-23, 각 N=5)**: 같은 조건(Near 0.40 m, 7차 모델, RELIABLE QoS)으로 추가 검증. 둘 다 Nav2 도착 5/5, Align 1차 5/5 성공. 도착 yaw: pin −6.22°~−7.30°, hex_nut +5.65°~+6.82°. 안전 구간까지 남은 최소 여유는 pin 3.7°, hex_nut 4.2°. 카메라 회색 감지·충돌 징후 0/5. 4개 물체 합계 30/30 성공, 전체 중 안전 구간 여유가 가장 작은 경우는 bolt의 3.6°.
+  - **확정 (A, 이 VM 기준, 4개 물체 전부)**: 위 결과로 block·pin·hex_nut·bolt 전부 `approach_yaw=0` 설계를 확정한다. 단:
     1. `yaw_goal_tolerance`는 0.125 rad 이하로 유지한다 — 되돌리면(예: 0.25로 복귀) 안전 구간(11°)을 넘어갈 수 있다.
     2. 카메라 회색 자동 감지 가드(`tools/diagnostics/camera_health.py`)는 계속 켜 둔다 — 안전 구간 `±11°`는 이 VM(ogre2+CPU 렌더링) 기준값이고, 팀원 PC(GPU 렌더링 등) 결과는 아직 다 모이지 않아 경계가 다를 수 있다.
-    3. pin·hex_nut은 아직 반복 검증 안 함(위치가 block·bolt 사이라 도착 yaw도 그 사이일 가능성이 높지만 미확인) — 확정 전 각 N=5 정도 권장.
-  - 참고로 이전 단일 실행에서 추정했던 여유값(pin 1.2°/hex_nut 0.7°/bolt 0.5°)은 계산 기준이 다른 것으로 보이며, 이번 N=10 반복 측정값(block 5.6°, bolt 3.6°)이 더 신뢰도가 높다.
+  - 참고로 이전 단일 실행에서 추정했던 여유값(pin 1.2°/hex_nut 0.7°/bolt 0.5°)은 계산 기준이 다른 것으로 보이며, 이번 N=5·N=10 반복 측정값(pin 3.7°, hex_nut 4.2°, block 5.6°, bolt 3.6°)이 더 신뢰도가 높다.
+  - **확인 필요로 남긴 점**: hex_nut만 정렬 뒤 실제 거리 오차가 −0.2~−1.6 mm로 나와, 나머지 세 물체(+7.7~+9.0 mm)와 부호·크기가 다르다. align_node의 원기둥 근사(5.6 참고)가 hex_nut 반경(0.015 m)에서 다르게 작용하는 것으로 추정되나 원인 미확인 — 다만 허용 오차(20 mm) 안이라 성공 판정에는 영향 없음.
 
 ### 5.6 카메라 관측 자세: far / near (C 제안, D 동의, 2026-11-15)
 
@@ -543,9 +544,8 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - [ ] 팀 코드 라이선스 (전원) — MIT 또는 Apache-2.0 중 선택. D는 둘 다 괜찮음
 - [x] 정렬 완료 판정(CHECKING) 중 검출 끊김 허용 시간 → 멈춘 뒤 최대 3 s(`lost_timeout_stopped`), 움직이는 중엔 1 s (D 확정, 2026-11-22, 4.1 · 5.3)
 - [ ] 같은 클래스 다수 물체 구분: Align Goal에 `expected_position`(PointStamped) · `expected_radius_m` 필드 추가 제안 (D, `project_interfaces` 변경 필요) — A 조건부 동의, 좌표계 일치 · 반경 안 미검출 시 처리 · 기존 클래스 필터와의 관계 3가지 명확화 요청, PR #1 댓글, 답변 대기
-- [x] (이 VM 기준) object 모드 접근 방향 → `approach_yaw=0`으로 ogre2 회색 화면 버그(세계 yaw ±11° 안전구간) 회피, block·bolt 각 N=10 검증 완료, `yaw_goal_tolerance` 0.125 유지 전제 (A, 2026-11-23, 5.5)
-  - [ ] pin·hex_nut `approach_yaw=0` 반복 검증 (각 N=5 권장) — 확정 전
-  - [ ] 테스트 도구(`stage1_run.py` 수정분, `repeat_yaw0.sh`, `yaw0rep_summary.py`) 저장소 반영 위치 결정 — 현재 VM 로컬(`/tmp/sfmm-brass-v7/tools/`)에만 있음
+- [x] (이 VM 기준) object 모드 접근 방향 → `approach_yaw=0`으로 ogre2 회색 화면 버그(세계 yaw ±11° 안전구간) 회피, 4개 물체(block·bolt 각 N=10, pin·hex_nut 각 N=5) 전부 검증 완료·확정, `yaw_goal_tolerance` 0.125 이하 유지 전제 (A, 2026-11-23, 5.5)
+  - [ ] 테스트 도구(`stage1_run.py` 수정분, `repeat_yaw0.sh`, `yaw0rep_summary.py` 등) 저장소 반영 — diagnostics 브랜치에 로컬 커밋까지 완료(`93b05ac`), 실행 의존 파일(stage1_all.sh 등) 포함 여부 확인 후 push 예정
 
 ---
 
@@ -593,3 +593,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-22 | v0.27 | 정렬 완료 거리를 near(1차 Align)/pre-grasp(2차 Align) 2단계 값으로 분리: near `standoff_m` 0.35→0.40 m, pre-grasp는 0.35 m 유지(5.6). 근거: near 0.35 m에서는 pin 검출 score가 0.5 임계값에 못 미치는 경우가 있었고, 0.40 m는 near·pre-grasp 69.3° 화면 가시 범위 양쪽에 들어옴 (D 제안 PR #1 id 7066535320, C 동의 id 7075009411, 2026-11-21~22). 5.2 재시도별 `standoff_m` 하한을 0.32 m 이상으로 명시(0.29 m는 pre-grasp 화면 가시 범위 밖이라 제외, D·C 확인). 5.5 Nav2 목표 거리 기준을 near `standoff_m`(0.40 m) 기준으로 재정리, 목표값 약 0.50 m는 유지되나 margin 근거가 "도착 오차 0.15 m"에서 "near 화면 가시 범위 0.10 m"로 바뀌어 두 근거가 완전히 일치하진 않음(확인 필요로 남김). 6장 체크리스트: 기본 `standoff_m`, 재시도별 `standoff_m`, 정렬 완료 거리, Nav2 도착 허용 오차 항목 갱신. 같은 클래스 다수 물체 구분 방법은 B 의견 대기 중이라 미반영(그대로 둠) | A |
 | 2026-11-23 | v0.28 | 정렬 완료 판정(CHECKING) 중 검출 끊김 허용 시간 추가: 차체 정지 중 최대 3 s(`lost_timeout_stopped`), 움직이는 중엔 1 s, 넘으면 `OBJECT_NOT_FOUND`(D 확정, 2026-11-22, 4.1 · 5.3). 같은 클래스 다수 물체 구분용 Align Goal `expected_position`·`expected_radius_m` 필드 추가 제안(D)은 A가 방향엔 조건부 동의했으나 좌표계 일치·반경 안 미검출 처리·기존 클래스 필터와의 관계 3가지 명확화를 요청한 상태라 본문에는 아직 반영하지 않고 6장 체크리스트에만 진행 상황 기록(`project_interfaces` 변경 필요, D 답변 대기) | A |
 | 2026-11-23 | v0.29 | 5.5에 `approach_yaw=0` 설계 신규 문서화: 이 VM(ogre2+CPU 렌더링)의 세계 yaw ±11° 안전구간 회색 화면 버그를 회피하기 위해 object 모드 접근 yaw를 0으로 고정, block·bolt 각 N=10 반복 검증(도착·Align 10/10, 회색·충돌 0/10, 안전구간 여유 block 5.6°/bolt 3.6°) 결과와 그 전제인 `yaw_goal_tolerance=0.125`(2026-11-17 변경) 의존성 기록. 6장 체크리스트에 pin·hex_nut 미검증 및 테스트 도구 저장소 반영 위치 미정 항목 추가, 5.5 기존 "목표 yaw=물체를 바라보는 방향" 서술에 이 VM 기준 `approach_yaw=0` 적용 갱신 메모 추가 | A |
+| 2026-11-23 | v0.30 | 5.5에 pin·hex_nut `approach_yaw=0` 각 N=5 후속 검증 결과 추가(도착·Align 5/5, 회색·충돌 0/5, 안전구간 여유 pin 3.7°/hex_nut 4.2°) — 4개 물체(block·pin·hex_nut·bolt) 전부 `approach_yaw=0` 설계 확정으로 상향. hex_nut만 정렬 뒤 거리 오차 부호·크기가 다른 점(−0.2~−1.6mm vs 나머지 +7.7~+9.0mm, 허용 오차 안)은 확인 필요로 기록. 6장 체크리스트 갱신(pin·hex_nut 항목 완료, 테스트 도구는 diagnostics 브랜치 로컬 커밋 `93b05ac`까지 완료·push 전 의존 파일 포함 여부 확인 중으로 갱신) | A |
