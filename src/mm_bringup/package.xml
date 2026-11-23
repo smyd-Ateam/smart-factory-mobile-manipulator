@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>mm_bringup</name>
+  <version>0.1.0</version>
+  <description>Integrated bringup package for the mobile manipulator</description>
+  <maintainer email="todo@todo.com">A</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>mm_description</exec_depend>
+  <exec_depend>mm_navigation</exec_depend>
+  <exec_depend>mm_task_manager</exec_depend>
+  <exec_depend>mm_perception</exec_depend>
+  <exec_depend>visual_servoing</exec_depend>
+  <exec_depend>mm_grasp</exec_depend>
+  <exec_depend>project_interfaces</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
