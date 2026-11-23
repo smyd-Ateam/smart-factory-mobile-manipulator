@@ -4,7 +4,7 @@
 > 코드와 이 문서가 다르면 이 문서를 먼저 고치고(PR + 리뷰) 코드를 맞춘다.
 
 - 담당: A (공통 인터페이스 · 내비게이션 · 상태머신)
-- 상태: 초안 (v0.32)
+- 상태: 초안 (v0.33)
 - `TBD` = 아직 미정. 남은 항목은 6장 체크리스트 참고.
 - 본 프로젝트는 시뮬레이션(소프트웨어)만 다룬다.
 
@@ -283,6 +283,19 @@ float64 bearing_error_rad
 - 상태머신이 보내는 `timeout_sec` 기본값: 30 s (D 확인, PR #1 2026-11-19. YOLO 3 Hz 조건 모의 시험에서 정렬 최대 약 9.7 s). 파라미터 `align_timeout_sec`로 바꿀 수 있다.
 - 시간 제한 (D 확인, 2026-11-09): 서버는 `timeout_sec`이 되면 직접 `ALIGN_TIMEOUT`을 반환한다. 상태머신은 `timeout_sec`보다 몇 초(임시 5 s) 더 기다려도 결과가 없으면 목표를 취소하고 `ALIGN_TIMEOUT`으로 기록한다. 취소되면 정렬 쪽은 속도 0을 보내고 끝낸다.
 - 정렬 완료 판정(CHECKING) 중 검출 끊김 허용 시간 (D 확정, 2026-11-22): 차체가 멈춘 뒤 판정하는 동안은 최대 3 s(`lost_timeout_stopped` 파라미터)까지 검출이 끊겨도 기다리고, 그 사이 다시 검출되면 판정을 계속한다. 차체가 움직이는 동안은 기존대로 1 s. 허용 시간을 넘기면 `OBJECT_NOT_FOUND`로 처리(5.3).
+- 같은 클래스 물체가 여러 개일 때 구분용 Goal 필드 추가 (D 제안, 2026-11-22, C 찬성 2026-11-23, **미확정** — `project_interfaces` 변경 전 아래 확인 필요 항목 정리 후 확정):
+
+  ```
+  geometry_msgs/PointStamped expected_position  # 목표 물체 예상 위치(map 등). frame_id가 비어 있으면 사용 안 함
+  float64 expected_radius_m                     # 예상 위치 기준 이 반경 안의 검출만 후보로 사용 (0 이하면 제한 없음)
+  ```
+
+  - 하위 호환: `expected_position.header.frame_id`가 비어 있으면 지금과 똑같이 동작한다. 기존 호출부는 고칠 필요 없음 (D).
+  - 동작: 예상 위치가 주어지면 첫 프레임에서 그 위치와 가장 가까운 검출을 고르고, 그 뒤로는 기존 추적 방식을 그대로 쓴다 (D). 상태머신은 Nav2 목표를 정할 때 쓴 물체 위치를 그대로 넘긴다.
+  - 반경 안에 검출이 하나도 없을 때 → 반경 밖의 가장 가까운 검출로 진행하지 않고 `OBJECT_NOT_FOUND`로 실패 처리한다. 같은 클래스의 다른 물체를 잘못 집는 것보다 실패 후 재시도하는 쪽이 안전하기 때문 (C 제안, A 동의, PR #1 2026-11-23).
+  - `expected_radius_m` 권장값 → 0.06 m. 테스트 월드 부품 간격이 0.12 m라서 그 절반으로 두면 옆 물체와 헷갈리지 않는다 (C 제안, PR #1 2026-11-23).
+    - **확인 필요 (A)**: `expected_position`은 map 기준이라, 검출 위치를 map으로 바꿀 때 로봇 위치 추정(AMCL) 오차가 그대로 들어간다. 5.5의 도착 오차 측정(2026-11-09)에서 AMCL 오차가 0.02~0.12 m였으므로, 0.06 m면 맞는 물체도 반경 밖으로 밀려 `OBJECT_NOT_FOUND`가 날 수 있다. 최근 조건(현재 Nav2 설정)에서 위치 추정 오차를 다시 확인한 뒤 상태머신 기본값을 정한다.
+  - 아직 확인할 것 (D): ① `expected_position`과 검출 위치를 같은 좌표계로 변환해서 비교하는지(TF 사용 여부), ② 기존 클래스 필터와는 "같은 클래스이면서 반경 안"(AND) 조건인지.
 
 ### 4.2 `Grasp` 액션 (B 확정)
 
@@ -546,7 +559,7 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 - [x] 목표 근처 맴돌기 → Nav2 설정은 그대로 둠. 다가오는 방향과 목표 yaw가 크게 다르면(약 180°) 도착 후 제자리 회전 중 맴돌 수 있음 (DWB와 goal checker가 서로 다른 시각의 map→odom을 쓰고, 1 Hz 재계획마다 둘 다 초기화됨. Humble 1.1.20 소스로 확인, 2026-11-13). object 모드는 목표 yaw가 물체를 바라보는 방향(= 다가오는 방향)이라 큰 회전이 거의 없고, 남는 yaw 오차는 D 정렬(시작 범위 ±0.35 rad)이 받는다. goal 모드에서 목표 yaw를 정할 때는 다가오는 방향에 가깝게 정한다 (A). **갱신(2026-11-23)**: 이 VM(ogre2+CPU 렌더링) 기준으로는 위 "물체를 바라보는 방향" 대신 `approach_yaw=0`(5.5)을 쓴다 — 회색 화면 회피가 우선이라 다가오는 방향과 다를 수 있음
 - [ ] 팀 코드 라이선스 (전원) — MIT 또는 Apache-2.0 중 선택. D는 둘 다 괜찮음
 - [x] 정렬 완료 판정(CHECKING) 중 검출 끊김 허용 시간 → 멈춘 뒤 최대 3 s(`lost_timeout_stopped`), 움직이는 중엔 1 s (D 확정, 2026-11-22, 4.1 · 5.3)
-- [ ] 같은 클래스 다수 물체 구분: Align Goal에 `expected_position`(PointStamped) · `expected_radius_m` 필드 추가 제안 (D, `project_interfaces` 변경 필요) — A 조건부 동의, 좌표계 일치 · 반경 안 미검출 시 처리 · 기존 클래스 필터와의 관계 3가지 명확화 요청, PR #1 댓글, 답변 대기
+- [ ] 같은 클래스 다수 물체 구분: Align Goal에 `expected_position`(PointStamped) · `expected_radius_m` 필드 추가 (D 제안, C 찬성, `project_interfaces` 변경 필요, 4.1) — 반경 안 미검출 시 `OBJECT_NOT_FOUND`, 권장 반경 0.06 m (C 제안, A 동의, PR #1 2026-11-23). 남은 것: 좌표계 비교 방식 · 클래스 필터와의 AND 관계 (D 답변 대기), 반경 0.06 m가 AMCL 오차(0.02~0.12 m, 5.5)보다 작은 문제 확인 (A)
 - [x] (이 VM 기준) object 모드 접근 방향 → `approach_yaw=0`으로 ogre2 회색 화면 버그(세계 yaw ±11° 안전구간) 회피, 4개 물체(block·bolt 각 N=10, pin·hex_nut 각 N=5) 전부 검증 완료·확정, `yaw_goal_tolerance` 0.125 이하 유지 전제 (A, 2026-11-23, 5.5). **상태머신 코드 반영 완료**(`mission.py` `approach_yaw` 필드, `machine.py` `_send_nav`, 테스트 475개 통과, feat/state-machine, 2026-11-23)
   - [ ] 테스트 도구(`stage1_run.py` 수정분, `repeat_yaw0.sh`, `yaw0rep_summary.py` 등) 저장소 반영 — diagnostics 브랜치에 로컬 커밋까지 완료(`93b05ac`), 실행 의존 파일(stage1_all.sh 등) 포함 여부 확인 후 push 예정
 
@@ -599,3 +612,4 @@ Nav2로 물체 근처까지 이동 → 베이스 미세 정렬(D) → IK 확인(
 | 2026-11-23 | v0.30 | 5.5에 pin·hex_nut `approach_yaw=0` 각 N=5 후속 검증 결과 추가(도착·Align 5/5, 회색·충돌 0/5, 안전구간 여유 pin 3.7°/hex_nut 4.2°) — 4개 물체(block·pin·hex_nut·bolt) 전부 `approach_yaw=0` 설계 확정으로 상향. hex_nut만 정렬 뒤 거리 오차 부호·크기가 다른 점(−0.2~−1.6mm vs 나머지 +7.7~+9.0mm, 허용 오차 안)은 확인 필요로 기록. 6장 체크리스트 갱신(pin·hex_nut 항목 완료, 테스트 도구는 diagnostics 브랜치 로컬 커밋 `93b05ac`까지 완료·push 전 의존 파일 포함 여부 확인 중으로 갱신) | A |
 | 2026-11-23 | v0.31 | `approach_yaw=0` 상태머신 코드 반영 완료 기록(5.5, 6장): `mission.py`에 `approach_yaw` 필드 추가, `machine.py` `_send_nav`가 `approach_goal`에 전달, 테스트 475개 통과(feat/state-machine, 커밋 전). 같은 작업에서 5.2 재시도용 `standoff_list` 기본값이 하한 위반이던 `[0.25, 0.22, 0.28]`에서 `[0.32, 0.32, 0.35]` placeholder로 교체됨(구체적 순서·조합은 그대로 TBD) — 6장 체크리스트에 기록. 이에 따라 지금 코드의 Nav2 목표 거리(`approach_distance = standoff_list[0] + margin`)가 `standoff_list[0]`(현재 0.32, near `standoff_m` 0.40이 아님)를 써서 0.47 m가 됨을 5.5에 확인 필요로 기록 — 5.6 near/pre-grasp 2단계가 상태머신에 반영되기 전까지는 0.47 m가 실제값(5.6 2단계 자체는 PR #5 확정 전까지 코드 미반영 그대로 유지) | A |
 | 2026-11-23 | v0.32 | 3.3·6장: YOLO 기본 추론 백엔드를 OpenVINO(f32)로 확정(A, 결정 필요 항목 종결). 근거는 기존 C의 Hz 실측(PyTorch 대비 평균·최소 모두 높음)과, 황동 pin 재검출 재시험이 이 Mac VM(aarch64)·다은님 WSL2(x86_64) 양쪽에서 OpenVINO(f32)로 100% 성공한 결과. `feat/yolo` 코드 쪽 실제 기본값 반영은 C 확인 후 진행 | A |
+| 2026-11-23 | v0.33 | 4.1에 같은 클래스 다수 물체 구분용 Align Goal 필드(`expected_position` · `expected_radius_m`) 제안 내용 추가(미확정): 하위 호환, 첫 프레임 최근접 선택, 반경 안 미검출 시 `OBJECT_NOT_FOUND`(C 제안, A 동의), 권장 반경 0.06 m(C 제안, 부품 간격 0.12 m 기준). 0.06 m가 5.5의 AMCL 오차(0.02~0.12 m)보다 작아 오판정 가능성이 있어 확인 필요로 기록. 좌표계 비교 방식 · 클래스 필터 관계는 D 답변 대기. 6장 체크리스트 갱신 | A |
