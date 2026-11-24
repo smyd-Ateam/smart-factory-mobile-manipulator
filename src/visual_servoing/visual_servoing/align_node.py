@@ -31,8 +31,7 @@ from visual_servoing.geometry import decode_depth, depth_at, pixel_to_camera, tr
 from visual_servoing.object_model import Cylinder, axis_from_hit, parse_object_shapes
 from visual_servoing.session import RUNNING, SUCCEEDED, AlignSession, SessionParams
 from visual_servoing.tracking import (
-    Candidate, base_bearing, base_plane_point, expected_goal_is_valid, pick_near_expected,
-    pick_target)
+    Candidate, base_bearing, base_plane_point, pick_near_expected, pick_target)
 
 
 def stamp_ns(stamp):
@@ -67,8 +66,9 @@ class AlignNode(Node):
         self.declare_parameter('floor_z', -0.05)   # base_link 기준 바닥 높이 (mm_description)
         # 같은 클래스가 여러 개일 때 직전 박스에서 이만큼(px) 넘게 떨어진 검출로는 갈아타지 않음
         self.declare_parameter('track_gate_px', 150.0)
-        # 예상 위치 반경 안 두 후보의 거리 차이가 이보다 작으면 어느 쪽인지 정하지 않음 (m, 설계 문서 8장)
-        self.declare_parameter('expected_ambiguity_m', 0.02)
+        # 예상 위치에 가장 가까운 두 후보의 거리 차이가 이보다 작으면 어느 쪽인지 정하지 않음
+        # (m, interfaces.md 4.1 잠정값, 같은 클래스 2물체 실측 뒤 재검토)
+        self.declare_parameter('expected_ambiguity_m', 0.03)
         for name, value in vars(ControlParams()).items():
             self.declare_parameter(name, value)
         for name, value in vars(SessionParams()).items():
@@ -257,12 +257,6 @@ class AlignNode(Node):
             self.get_logger().warn(
                 f'잘못된 목표 거부: target_class={goal.target_class!r}, '
                 f'standoff_m={goal.standoff_m}, timeout_sec={goal.timeout_sec}')
-            return GoalResponse.REJECT
-        if not expected_goal_is_valid(goal.expected_position.header.frame_id,
-                                      goal.expected_radius_m):
-            self.get_logger().warn(
-                f'잘못된 목표 거부: expected_position이 있는데 '
-                f'expected_radius_m={goal.expected_radius_m}')
             return GoalResponse.REJECT
         return GoalResponse.ACCEPT
 

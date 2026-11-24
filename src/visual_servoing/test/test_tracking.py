@@ -7,8 +7,7 @@ import pytest
 from visual_servoing.geometry import matrix_to_quat, optical_rotation_in_base, quat_to_matrix
 from visual_servoing.sim_model import CAMERA_POSES
 from visual_servoing.tracking import (
-    Candidate, base_bearing, base_plane_point, expected_goal_is_valid, pick_near_expected,
-    pick_target)
+    Candidate, base_bearing, base_plane_point, pick_near_expected, pick_target)
 
 K = (554.38, 554.38, 320.0, 240.0)
 
@@ -96,15 +95,24 @@ def test_base_plane_point_recovers_xy(x, y):
     assert base_plane_point(u, v, K, t, q, -0.025) == pytest.approx((x, y), abs=1e-6)
 
 
-@pytest.mark.parametrize('frame_id, radius, ok', [
-    ('', 0.0, True),        # 예상 위치 없음: 지금과 똑같이 동작
-    ('', -1.0, True),       # frame_id가 비면 반경은 보지 않는다
-    ('map', 0.07, True),
-    ('map', 0.0, False),    # 예상 위치는 있는데 반경이 없으면 거부
-    ('map', -0.07, False),
-])
-def test_expected_goal_is_valid(frame_id, radius, ok):
-    assert expected_goal_is_valid(frame_id, radius) is ok
+@pytest.mark.parametrize('radius', [0.0, -0.08])
+def test_expected_radius_zero_or_less_means_no_limit(radius):
+    # interfaces.md 4.1: expected_radius_m가 0 이하면 반경 제한 없이 가장 가까운 후보
+    points = [(0.45, -0.30), (0.45, 0.40)]
+    assert pick_near_expected(points, (0.45, 0.0), radius_m=radius, ambiguity_m=0.03) == 0
+
+
+def test_expected_no_limit_still_applies_ambiguity_rule():
+    points = [(0.45, -0.30), (0.45, 0.31)]
+    assert pick_near_expected(points, (0.45, 0.0), radius_m=0.0, ambiguity_m=0.03) is None
+
+
+def test_expected_ambiguity_boundary_team_value():
+    # interfaces.md 4.1: 1, 2위 거리차가 0.03 m 이상이면 선택, 아니면 고르지 않음
+    picked = [(0.45, 0.02), (0.45, -0.051)]     # 거리차 0.031
+    unsure = [(0.45, 0.02), (0.45, -0.049)]     # 거리차 0.029
+    assert pick_near_expected(picked, (0.45, 0.0), radius_m=0.08, ambiguity_m=0.03) == 0
+    assert pick_near_expected(unsure, (0.45, 0.0), radius_m=0.08, ambiguity_m=0.03) is None
 
 
 def test_base_plane_point_none_when_ray_points_up():

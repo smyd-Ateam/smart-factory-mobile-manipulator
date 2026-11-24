@@ -49,24 +49,21 @@ def base_plane_point(u: float, v: float, k: Tuple[float, float, float, float], c
     return float(p[0]), float(p[1])
 
 
-def expected_goal_is_valid(frame_id: str, radius_m: float) -> bool:
-    """Align 목표의 예상 위치 필드 검사. frame_id가 비면 예상 위치를 쓰지 않으므로 항상 유효."""
-    return not frame_id or radius_m > 0.0
-
-
 def pick_near_expected(points: Sequence[Optional[Tuple[float, float]]],
                        expected_xy: Tuple[float, float], radius_m: float,
                        ambiguity_m: float) -> Optional[int]:
     """예상 위치 반경 안에서 가장 가까운 후보의 인덱스. 고를 수 없으면 None.
 
     points: 후보별 base_link (x, y). 위치를 못 구한 후보는 None.
-    반경 안 두 번째 후보와의 거리 차이가 ambiguity_m보다 작으면 어느 쪽인지 확신할 수 없어
+    radius_m가 0 이하면 반경 제한 없이 전체 후보에서 고른다 (interfaces.md 4.1).
+    두 번째 후보와의 거리 차이가 ambiguity_m보다 작으면 어느 쪽인지 확신할 수 없어
     고르지 않는다 (엉뚱한 물체에 정렬하는 것보다 실패가 낫다).
     """
     inside = sorted(
         (math.hypot(p[0] - expected_xy[0], p[1] - expected_xy[1]), i)
         for i, p in enumerate(points) if p is not None)
-    inside = [(d, i) for d, i in inside if d <= radius_m]
+    if radius_m > 0.0:
+        inside = [(d, i) for d, i in inside if d <= radius_m]
     if not inside:
         return None
     if len(inside) > 1 and inside[1][0] - inside[0][0] < ambiguity_m:
