@@ -37,6 +37,7 @@ setup(
             'mock_target_pose = mm_task_manager.mocks.mock_target_pose:main',
             # 제안 초안 (A), B 확인 전
             'mock_observe_pose_server = mm_task_manager.mocks.mock_observe_pose_server:main',
+            'observe_pose_server = mm_task_manager.observe_pose_server:main',
         ],
     },
 )
