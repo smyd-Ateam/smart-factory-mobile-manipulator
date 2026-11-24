@@ -6,6 +6,8 @@
   차체 정면이 다르다 (Gazebo 방해물 시험에서 10회 중 1회 옆 물체를 고름, 설계 문서 5.3).
 - 이후: 직전에 고른 박스 중심에 가장 가까운 검출. 점수가 더 높은 다른 물체로 갈아타지 않는다.
 - 직전 위치에서 gate_px보다 멀면 놓친 것으로 본다 (다른 물체로 갈아타지 않음).
+- 상태머신이 목표의 예상 위치를 주면 첫 프레임은 방위 대신 예상 위치 반경 안의 가장 가까운
+  검출을 고른다. 반경 안에 없거나 두 후보가 구분되지 않으면 고르지 않는다 (설계 문서 8장).
 """
 import math
 from typing import NamedTuple, Optional, Sequence, Tuple
@@ -27,13 +29,49 @@ def base_bearing(u: float, v: float, k: Tuple[float, float, float, float], cam_t
 
     광선이 그 높이로 내려가지 않으면 (위를 봄) 광선 수평 방향의 방위를 쓴다.
     """
+    p = base_plane_point(u, v, k, cam_t, cam_q, z_plane)
+    if p is not None:
+        return math.atan2(p[1], p[0])
+    fx, fy, cx, cy = k
+    ray = quat_to_matrix(*cam_q) @ np.array([(u - cx) / fx, (v - cy) / fy, 1.0])
+    return math.atan2(ray[1], ray[0])
+
+
+def base_plane_point(u: float, v: float, k: Tuple[float, float, float, float], cam_t, cam_q,
+                     z_plane: float) -> Optional[Tuple[float, float]]:
+    """픽셀 (u, v) 광선이 높이 z_plane(base_link)에 닿는 점의 (x, y). 위를 보는 광선이면 None."""
     fx, fy, cx, cy = k
     ray = quat_to_matrix(*cam_q) @ np.array([(u - cx) / fx, (v - cy) / fy, 1.0])
     t = np.asarray(cam_t, dtype=float)
-    if ray[2] < -1e-9:
-        p = t + (z_plane - t[2]) / ray[2] * ray
-        return math.atan2(p[1], p[0])
-    return math.atan2(ray[1], ray[0])
+    if ray[2] >= -1e-9:
+        return None
+    p = t + (z_plane - t[2]) / ray[2] * ray
+    return float(p[0]), float(p[1])
+
+
+def expected_goal_is_valid(frame_id: str, radius_m: float) -> bool:
+    """Align 목표의 예상 위치 필드 검사. frame_id가 비면 예상 위치를 쓰지 않으므로 항상 유효."""
+    return not frame_id or radius_m > 0.0
+
+
+def pick_near_expected(points: Sequence[Optional[Tuple[float, float]]],
+                       expected_xy: Tuple[float, float], radius_m: float,
+                       ambiguity_m: float) -> Optional[int]:
+    """예상 위치 반경 안에서 가장 가까운 후보의 인덱스. 고를 수 없으면 None.
+
+    points: 후보별 base_link (x, y). 위치를 못 구한 후보는 None.
+    반경 안 두 번째 후보와의 거리 차이가 ambiguity_m보다 작으면 어느 쪽인지 확신할 수 없어
+    고르지 않는다 (엉뚱한 물체에 정렬하는 것보다 실패가 낫다).
+    """
+    inside = sorted(
+        (math.hypot(p[0] - expected_xy[0], p[1] - expected_xy[1]), i)
+        for i, p in enumerate(points) if p is not None)
+    inside = [(d, i) for d, i in inside if d <= radius_m]
+    if not inside:
+        return None
+    if len(inside) > 1 and inside[1][0] - inside[0][0] < ambiguity_m:
+        return None
+    return inside[0][1]
 
 
 def pick_target(candidates: Sequence[Candidate], last_uv: Optional[Tuple[float, float]],

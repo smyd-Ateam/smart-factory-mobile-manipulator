@@ -13,10 +13,11 @@ import math
 import subprocess
 
 import rclpy
-from geometry_msgs.msg import PointStamped, Twist
+from geometry_msgs.msg import PointStamped, TransformStamped, Twist
 from rclpy.node import Node
 from std_srvs.srv import Trigger
 from tf2_msgs.msg import TFMessage
+from tf2_ros import TransformBroadcaster
 from vision_msgs.msg import Detection2DArray
 
 from visual_servoing.mock_model import object_in_base, true_error
@@ -42,6 +43,9 @@ class SimSceneNode(Node):
         self.declare_parameter('base_frame', 'base_link')
         # false면 정답 박스를 내보내지 않는다 (YOLO 검출 노드가 /perception/detections 발행)
         self.declare_parameter('gt_detections', True)
+        # 차체 실제 위치로 world → base_link TF를 낸다 (예상 위치 시험용, 빈 값이면 안 냄).
+        # 실제 로봇에서는 AMCL의 map → base_link가 이 역할을 한다.
+        self.declare_parameter('world_frame', 'world')
 
         self.pose = None   # (x, y, yaw) world 기준
         self.det_pub = self.create_publisher(Detection2DArray, '/perception/detections', 10)
@@ -50,6 +54,7 @@ class SimSceneNode(Node):
         self.create_subscription(Detection2DArray, '/servoing/sim_boxes', self.on_boxes, 10)
         self.create_subscription(TFMessage, '/servoing/sim_base_pose', self.on_pose, 10)
         self.create_service(Trigger, '/servoing/sim_reset', self.on_reset)
+        self.tf_pub = TransformBroadcaster(self)
         self.create_timer(1.0, self.on_log)
 
     def p(self, name):
@@ -86,6 +91,16 @@ class SimSceneNode(Node):
             truth.header.frame_id = self.p('base_frame')
             truth.point.x, truth.point.y, truth.point.z = self.p_base()
             self.truth_pub.publish(truth)
+            if self.p('world_frame'):
+                world = TransformStamped()
+                world.header.stamp = t.header.stamp
+                world.header.frame_id = self.p('world_frame')
+                world.child_frame_id = self.p('base_frame')
+                world.transform.translation.x = t.transform.translation.x
+                world.transform.translation.y = t.transform.translation.y
+                world.transform.translation.z = self.p('base_height')
+                world.transform.rotation = r
+                self.tf_pub.sendTransform(world)
             return
 
     def p_base(self):

@@ -48,6 +48,11 @@ class Trials(Node):
         self.declare_parameter('object_xy', [0.60, 0.08])
         self.declare_parameter('seed', 0)
         self.declare_parameter('csv', '')
+        # 예상 위치를 목표에 넣는 시험 (설계 문서 8장). 빈 값이면 넣지 않는다.
+        # sim에서는 sim_scene_node가 world → base_link TF를 낸다.
+        self.declare_parameter('expected_frame', '')
+        self.declare_parameter('expected_radius_m', 0.07)
+        self.declare_parameter('expected_noise_m', 0.0)  # 위치 추정 오차 흉내: 반지름 안 균등
 
         scene = self.p('scene')
         if scene not in SCENES:
@@ -102,6 +107,13 @@ class Trials(Node):
 
             goal = Align.Goal(target_class=self.p('target_class'), standoff_m=standoff,
                               timeout_sec=self.p('timeout_sec'))
+            if self.p('expected_frame'):
+                en = self.p('expected_noise_m') * math.sqrt(rng.random())
+                ea = rng.uniform(-math.pi, math.pi)
+                goal.expected_position.header.frame_id = self.p('expected_frame')
+                goal.expected_position.point.x = ox + en * math.cos(ea)
+                goal.expected_position.point.y = oy + en * math.sin(ea)
+                goal.expected_radius_m = self.p('expected_radius_m')
             t0 = self.get_clock().now()
             gh = self.wait(self.client.send_goal_async(goal), 5.0)
             if gh is None or not gh.accepted:

@@ -30,7 +30,9 @@ from visual_servoing.control import ControlParams
 from visual_servoing.geometry import decode_depth, depth_at, pixel_to_camera, transform_point
 from visual_servoing.object_model import Cylinder, axis_from_hit, parse_object_shapes
 from visual_servoing.session import RUNNING, SUCCEEDED, AlignSession, SessionParams
-from visual_servoing.tracking import Candidate, base_bearing, pick_target
+from visual_servoing.tracking import (
+    Candidate, base_bearing, base_plane_point, expected_goal_is_valid, pick_near_expected,
+    pick_target)
 
 
 def stamp_ns(stamp):
@@ -65,6 +67,8 @@ class AlignNode(Node):
         self.declare_parameter('floor_z', -0.05)   # base_link 기준 바닥 높이 (mm_description)
         # 같은 클래스가 여러 개일 때 직전 박스에서 이만큼(px) 넘게 떨어진 검출로는 갈아타지 않음
         self.declare_parameter('track_gate_px', 150.0)
+        # 예상 위치 반경 안 두 후보의 거리 차이가 이보다 작으면 어느 쪽인지 정하지 않음 (m, 설계 문서 8장)
+        self.declare_parameter('expected_ambiguity_m', 0.02)
         for name, value in vars(ControlParams()).items():
             self.declare_parameter(name, value)
         for name, value in vars(SessionParams()).items():
@@ -77,6 +81,7 @@ class AlignNode(Node):
         self.last_uv = None                   # 실행 중인 목표에서 마지막으로 고른 박스 중심 (px)
         self.lock = threading.Lock()
         self.active_target = None             # 실행 중인 목표의 target_class
+        self.expected = None                  # 실행 중인 목표의 (PointStamped, 반경 m), 없으면 None
         self.measurement = None               # (stamp 초, x_b, y_b), base_link 기준
         self.shutting_down = threading.Event()   # 종료 중이면 실행 중인 목표를 멈춤
         self.idle = threading.Event()             # 실행 중인 목표가 없음
@@ -146,14 +151,44 @@ class AlignNode(Node):
                            d.results[0].hypothesis.score) for d in dets]
         with self.lock:
             last_uv = self.last_uv
+            expected = self.expected
         first_cost = []
-        if last_uv is None:   # 첫 프레임: 차체 정면에 가장 가까운 물체
+        if last_uv is None:
             k = self.camera_info.k
+            kk = (k[0], k[4], k[2], k[5])
             shape = self.object_shapes.get(target, NO_SHAPE)
             z_mid = self.param('floor_z') + min(shape.height, 1.0) / 2.0
-            first_cost = [abs(base_bearing(c.u, c.v, (k[0], k[4], k[2], k[5]), cam_t, cam_q, z_mid))
-                          for c in cands]
+            if expected is not None:   # 첫 프레임: 예상 위치 반경 안에서 가장 가까운 물체
+                i = self.pick_expected(cands, expected, msg.header.stamp, kk, cam_t, cam_q, z_mid)
+                return self.remember_pick(target, cands, dets, i)
+            # 첫 프레임: 차체 정면에 가장 가까운 물체
+            first_cost = [abs(base_bearing(c.u, c.v, kk, cam_t, cam_q, z_mid)) for c in cands]
         i = pick_target(cands, last_uv, self.param('track_gate_px'), first_cost)
+        return self.remember_pick(target, cands, dets, i)
+
+    def pick_expected(self, cands, expected, stamp, kk, cam_t, cam_q, z_mid):
+        """예상 위치를 검출 시각의 base_link로 옮겨 반경 안 후보를 고른다. 못 고르면 None."""
+        point, radius = expected
+        try:
+            tf = self.tf_buffer.lookup_transform(
+                self.param('base_frame'), point.header.frame_id, Time.from_msg(stamp),
+                timeout=Duration(seconds=0.05))
+        except TransformException as e:
+            self.get_logger().warn(f'예상 위치 TF 실패: {e}', throttle_duration_sec=5.0)
+            return None
+        tr, q = tf.transform.translation, tf.transform.rotation
+        ex, ey, _ = transform_point((point.point.x, point.point.y, point.point.z),
+                                    (tr.x, tr.y, tr.z), (q.x, q.y, q.z, q.w))
+        points = [base_plane_point(c.u, c.v, kk, cam_t, cam_q, z_mid) for c in cands]
+        i = pick_near_expected(points, (ex, ey), radius, self.param('expected_ambiguity_m'))
+        if i is None and cands:
+            self.get_logger().warn(
+                f'예상 위치 ({ex:.3f}, {ey:.3f}) 반경 {radius:.3f} m 안에서 목표를 정하지 못함 '
+                f'(후보 {len(cands)}개)', throttle_duration_sec=1.0)
+        return i
+
+    def remember_pick(self, target, cands, dets, i):
+        """고른 박스 중심을 기억하고 그 검출을 돌려준다. i가 None이면 None."""
         if i is None:
             return None
         with self.lock:
@@ -223,6 +258,12 @@ class AlignNode(Node):
                 f'잘못된 목표 거부: target_class={goal.target_class!r}, '
                 f'standoff_m={goal.standoff_m}, timeout_sec={goal.timeout_sec}')
             return GoalResponse.REJECT
+        if not expected_goal_is_valid(goal.expected_position.header.frame_id,
+                                      goal.expected_radius_m):
+            self.get_logger().warn(
+                f'잘못된 목표 거부: expected_position이 있는데 '
+                f'expected_radius_m={goal.expected_radius_m}')
+            return GoalResponse.REJECT
         return GoalResponse.ACCEPT
 
     def publish_cmd(self, vx, wz):
@@ -238,9 +279,16 @@ class AlignNode(Node):
             self.active_target = goal.target_class
             self.measurement = None
             self.last_uv = None
+            self.expected = ((goal.expected_position, goal.expected_radius_m)
+                             if goal.expected_position.header.frame_id else None)
+        where = ''
+        if self.expected is not None:
+            p = goal.expected_position
+            where = (f', 예상 위치 ({p.point.x:.3f}, {p.point.y:.3f}) {p.header.frame_id} '
+                     f'반경 {goal.expected_radius_m:.3f} m')
         self.get_logger().info(
             f'정렬 시작: {goal.target_class}, standoff {goal.standoff_m:.3f} m, '
-            f'제한 {goal.timeout_sec:.1f} s')
+            f'제한 {goal.timeout_sec:.1f} s{where}')
 
         cp = ControlParams(**{k: self.param(k) for k in vars(ControlParams())})
         sp = SessionParams(**{k: self.param(k) for k in vars(SessionParams())})
@@ -301,6 +349,7 @@ class AlignNode(Node):
                 self.active_target = None
                 self.measurement = None
                 self.last_uv = None
+                self.expected = None
             self.destroy_rate(rate)
             self.idle.set()
 
