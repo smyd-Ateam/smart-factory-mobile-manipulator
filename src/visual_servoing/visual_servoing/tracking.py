@@ -14,7 +14,8 @@ from typing import NamedTuple, Optional, Sequence, Tuple
 
 import numpy as np
 
-from visual_servoing.geometry import quat_to_matrix
+from visual_servoing.geometry import depth_at, pixel_to_camera, quat_to_matrix, transform_point
+from visual_servoing.object_model import Cylinder, axis_from_hit
 
 
 class Candidate(NamedTuple):
@@ -47,6 +48,20 @@ def base_plane_point(u: float, v: float, k: Tuple[float, float, float, float], c
         return None
     p = t + (z_plane - t[2]) / ray[2] * ray
     return float(p[0]), float(p[1])
+
+
+def candidate_base_xy(u: float, v: float, half_window: int, depth,
+                      k: Tuple[float, float, float, float], cam_t, cam_q, shape: Cylinder,
+                      floor_z: float) -> Optional[Tuple[float, float]]:
+    """검출 박스 중심 (u, v)의 깊이로 구한 물체 중심축 (x, y), base_link 기준. 유효 깊이가 없으면 None.
+
+    깊이는 박스 중심이 닿은 표면까지라 원기둥 모델로 중심축을 구한다 (object_model.axis_from_hit).
+    """
+    z = depth_at(depth, u, v, half_window)
+    if z is None:
+        return None
+    hit = transform_point(pixel_to_camera(u, v, z, *k), cam_t, cam_q)
+    return axis_from_hit(hit, shape, floor_z, cam_t, cam_q, k)
 
 
 def pick_near_expected(points: Sequence[Optional[Tuple[float, float]]],

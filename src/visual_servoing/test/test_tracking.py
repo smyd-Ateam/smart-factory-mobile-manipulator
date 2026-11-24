@@ -6,8 +6,9 @@ import pytest
 
 from visual_servoing.geometry import matrix_to_quat, optical_rotation_in_base, quat_to_matrix
 from visual_servoing.sim_model import CAMERA_POSES
+from visual_servoing.object_model import Cylinder
 from visual_servoing.tracking import (
-    Candidate, base_bearing, base_plane_point, pick_near_expected, pick_target)
+    Candidate, base_bearing, base_plane_point, candidate_base_xy, pick_near_expected, pick_target)
 
 K = (554.38, 554.38, 320.0, 240.0)
 
@@ -119,3 +120,32 @@ def test_base_plane_point_none_when_ray_points_up():
     # 수평으로 놓인 카메라의 화면 위쪽 픽셀은 아래 평면과 만나지 않는다
     q = matrix_to_quat(optical_rotation_in_base(0.0))
     assert base_plane_point(320.0, 0.0, K, (0.0, 0.0, 0.2), q, -0.025) is None
+
+
+def depth_image_with_point(p_base, t, q, value_offset=0.0):
+    """base_link 점 p_base가 찍힌 픽셀 주변만 깊이가 있는 640x480 깊이 영상."""
+    o = quat_to_matrix(*q).T @ (np.array(p_base) - np.array(t))
+    u, v = K[0] * o[0] / o[2] + K[2], K[1] * o[1] / o[2] + K[3]
+    depth = np.full((480, 640), np.inf, dtype=np.float32)
+    ui, vi = int(round(u)), int(round(v))
+    depth[vi - 2:vi + 3, ui - 2:ui + 3] = o[2] + value_offset
+    return depth, u, v
+
+
+def test_candidate_base_xy_uses_depth():
+    # 반지름 0인 물체: 깊이로 잰 점이 곧 중심축 (interfaces.md 4.1, 검출 위치는 깊이로 구함)
+    pose = CAMERA_POSES['near']
+    q = matrix_to_quat(optical_rotation_in_base(pose.pitch))
+    t = (pose.x, 0.0, pose.z)
+    p = (0.42, 0.06, -0.025)
+    depth, u, v = depth_image_with_point(p, t, q)
+    got = candidate_base_xy(u, v, 2, depth, K, t, q, Cylinder(0.0, 0.05), -0.05)
+    assert got == pytest.approx((0.42, 0.06), abs=2e-3)
+
+
+def test_candidate_base_xy_none_without_valid_depth():
+    pose = CAMERA_POSES['near']
+    q = matrix_to_quat(optical_rotation_in_base(pose.pitch))
+    t = (pose.x, 0.0, pose.z)
+    depth = np.full((480, 640), np.inf, dtype=np.float32)
+    assert candidate_base_xy(320.0, 240.0, 2, depth, K, t, q, Cylinder(0.0, 0.05), -0.05) is None

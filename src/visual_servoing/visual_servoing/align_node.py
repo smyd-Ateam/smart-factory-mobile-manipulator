@@ -27,11 +27,11 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from vision_msgs.msg import Detection2DArray
 
 from visual_servoing.control import ControlParams
-from visual_servoing.geometry import decode_depth, depth_at, pixel_to_camera, transform_point
-from visual_servoing.object_model import Cylinder, axis_from_hit, parse_object_shapes
+from visual_servoing.geometry import decode_depth, transform_point
+from visual_servoing.object_model import Cylinder, parse_object_shapes
 from visual_servoing.session import RUNNING, SUCCEEDED, AlignSession, SessionParams
 from visual_servoing.tracking import (
-    Candidate, base_bearing, base_plane_point, pick_near_expected, pick_target)
+    Candidate, base_bearing, candidate_base_xy, pick_near_expected, pick_target)
 
 
 def stamp_ns(stamp):
@@ -43,6 +43,9 @@ def stamp_ns(stamp):
 DEFAULT_OBJECT_SHAPES = ['block:0.0125:0.04', 'pin:0.010:0.05',
                          'hex_nut:0.015:0.015', 'bolt:0.006:0.06']
 NO_SHAPE = Cylinder(0.0, 1.0)   # 모르는 클래스: 잰 점을 그대로 씀
+# 예상 위치를 base_link로 옮기지 못했을 때 결과 코드. interfaces.md 4.1 "별도 TF 오류".
+# 5.3 실패 코드 표에 이름이 아직 없어 임시 이름 (A 확인 후 확정)
+TF_ERROR = 'TF_ERROR'
 # 깊이·camera_info는 RELIABLE로 받는다. 약 1 MB 이미지를 BEST_EFFORT(sensor_data)로 받으면
 # ros_gz_bridge(RELIABLE 발행)에서 오는 프레임이 WSL에서도 40~60 %만 도착했다 (RELIABLE은 100 %,
 # PR #1 RGB-D 브리지 진단, 2026-11-22).
@@ -69,6 +72,8 @@ class AlignNode(Node):
         # 예상 위치에 가장 가까운 두 후보의 거리 차이가 이보다 작으면 어느 쪽인지 정하지 않음
         # (m, interfaces.md 4.1 잠정값, 같은 클래스 2물체 실측 뒤 재검토)
         self.declare_parameter('expected_ambiguity_m', 0.03)
+        # 정렬 시작 때 예상 위치 TF(map → base_link 등)를 기다리는 최대 시간 (s)
+        self.declare_parameter('expected_tf_timeout', 1.0)
         for name, value in vars(ControlParams()).items():
             self.declare_parameter(name, value)
         for name, value in vars(SessionParams()).items():
@@ -141,7 +146,12 @@ class AlignNode(Node):
                 best = (diff, depth)
         return None if best is None else best[1]
 
-    def pick_detection(self, msg, target, cam_t, cam_q):
+    def half_window(self, det):
+        """깊이 중앙값을 낼 창 반폭 (px). 작은 박스에서 배경 깊이가 섞이지 않게 박스 크기로 제한."""
+        return max(1, min(self.param('depth_half_window'),
+                          int(det.bbox.size_x / 4), int(det.bbox.size_y / 4)))
+
+    def pick_detection(self, msg, target, cam_t, cam_q, depth):
         """목표 클래스 검출 중 따라가던 물체 하나를 고른다 (tracking.pick_target)."""
         score_min = self.param('score_min')
         dets = [d for d in msg.detections
@@ -157,34 +167,26 @@ class AlignNode(Node):
             k = self.camera_info.k
             kk = (k[0], k[4], k[2], k[5])
             shape = self.object_shapes.get(target, NO_SHAPE)
-            z_mid = self.param('floor_z') + min(shape.height, 1.0) / 2.0
             if expected is not None:   # 첫 프레임: 예상 위치 반경 안에서 가장 가까운 물체
-                i = self.pick_expected(cands, expected, msg.header.stamp, kk, cam_t, cam_q, z_mid)
+                points = [candidate_base_xy(c.u, c.v, self.half_window(d), depth, kk, cam_t,
+                                            cam_q, shape, self.param('floor_z'))
+                          for c, d in zip(cands, dets)]
+                i = self.pick_expected(points, expected)
                 return self.remember_pick(target, cands, dets, i)
             # 첫 프레임: 차체 정면에 가장 가까운 물체
+            z_mid = self.param('floor_z') + min(shape.height, 1.0) / 2.0
             first_cost = [abs(base_bearing(c.u, c.v, kk, cam_t, cam_q, z_mid)) for c in cands]
         i = pick_target(cands, last_uv, self.param('track_gate_px'), first_cost)
         return self.remember_pick(target, cands, dets, i)
 
-    def pick_expected(self, cands, expected, stamp, kk, cam_t, cam_q, z_mid):
-        """예상 위치를 검출 시각의 base_link로 옮겨 반경 안 후보를 고른다. 못 고르면 None."""
-        point, radius = expected
-        try:
-            tf = self.tf_buffer.lookup_transform(
-                self.param('base_frame'), point.header.frame_id, Time.from_msg(stamp),
-                timeout=Duration(seconds=0.05))
-        except TransformException as e:
-            self.get_logger().warn(f'예상 위치 TF 실패: {e}', throttle_duration_sec=5.0)
-            return None
-        tr, q = tf.transform.translation, tf.transform.rotation
-        ex, ey, _ = transform_point((point.point.x, point.point.y, point.point.z),
-                                    (tr.x, tr.y, tr.z), (q.x, q.y, q.z, q.w))
-        points = [base_plane_point(c.u, c.v, kk, cam_t, cam_q, z_mid) for c in cands]
+    def pick_expected(self, points, expected):
+        """base_link로 옮겨 둔 예상 위치 반경 안에서 후보를 고른다 (interfaces.md 4.1). 못 고르면 None."""
+        (ex, ey), radius = expected
         i = pick_near_expected(points, (ex, ey), radius, self.param('expected_ambiguity_m'))
-        if i is None and cands:
+        if i is None and points:
             self.get_logger().warn(
                 f'예상 위치 ({ex:.3f}, {ey:.3f}) 반경 {radius:.3f} m 안에서 목표를 정하지 못함 '
-                f'(후보 {len(cands)}개)', throttle_duration_sec=1.0)
+                f'(후보 {len(points)}개)', throttle_duration_sec=1.0)
         return i
 
     def remember_pick(self, target, cands, dets, i):
@@ -215,10 +217,7 @@ class AlignNode(Node):
         tr, q = tf.transform.translation, tf.transform.rotation
         cam_t, cam_q = (tr.x, tr.y, tr.z), (q.x, q.y, q.z, q.w)
 
-        det = self.pick_detection(msg, target, cam_t, cam_q)
-        if det is None:
-            return
-
+        # 예상 위치로 후보를 고를 때도 깊이가 필요해서 고르기 전에 같은 stamp 깊이를 찾는다
         depth = self.find_depth(t_ns)
         if depth is None:
             if retry:
@@ -227,20 +226,20 @@ class AlignNode(Node):
                 self.get_logger().warn('같은 stamp의 깊이 이미지 없음', throttle_duration_sec=5.0)
             return
 
-        u, v = det.bbox.center.position.x, det.bbox.center.position.y
-        half = max(1, min(self.param('depth_half_window'),
-                          int(det.bbox.size_x / 4), int(det.bbox.size_y / 4)))
-        z = depth_at(depth, u, v, half)
-        if z is None:
-            self.get_logger().warn('bbox 중심에 유효한 깊이 없음', throttle_duration_sec=5.0)
+        det = self.pick_detection(msg, target, cam_t, cam_q, depth)
+        if det is None:
             return
 
         k = self.camera_info.k
-        p_cam = pixel_to_camera(u, v, z, k[0], k[4], k[2], k[5])
-        hit = transform_point(p_cam, cam_t, cam_q)
         # 깊이는 bbox 중심이 닿은 표면까지라 물체 모양으로 중심축을 구한다 (object_model.py)
-        x_b, y_b = axis_from_hit(hit, self.object_shapes.get(target, NO_SHAPE),
-                                 self.param('floor_z'), cam_t, cam_q, (k[0], k[4], k[2], k[5]))
+        xy = candidate_base_xy(det.bbox.center.position.x, det.bbox.center.position.y,
+                               self.half_window(det), depth, (k[0], k[4], k[2], k[5]),
+                               cam_t, cam_q, self.object_shapes.get(target, NO_SHAPE),
+                               self.param('floor_z'))
+        if xy is None:
+            self.get_logger().warn('bbox 중심에 유효한 깊이 없음', throttle_duration_sec=5.0)
+            return
+        x_b, y_b = xy
         with self.lock:
             if self.active_target == target:
                 self.measurement = (t_ns / 1e9, x_b, y_b)
@@ -260,6 +259,20 @@ class AlignNode(Node):
             return GoalResponse.REJECT
         return GoalResponse.ACCEPT
 
+    def expected_in_base(self, point):
+        """예상 위치(PointStamped)를 최신 TF로 base_link (x, y)로 옮긴다. 실패하면 None."""
+        try:
+            tf = self.tf_buffer.lookup_transform(
+                self.param('base_frame'), point.header.frame_id, Time(),
+                timeout=Duration(seconds=self.param('expected_tf_timeout')))
+        except TransformException as e:
+            self.get_logger().error(f'예상 위치 TF 실패 ({point.header.frame_id}): {e}')
+            return None
+        tr, q = tf.transform.translation, tf.transform.rotation
+        x, y, _ = transform_point((point.point.x, point.point.y, point.point.z),
+                                  (tr.x, tr.y, tr.z), (q.x, q.y, q.z, q.w))
+        return x, y
+
     def publish_cmd(self, vx, wz):
         msg = Twist()
         msg.linear.x = float(vx)
@@ -273,10 +286,9 @@ class AlignNode(Node):
             self.active_target = goal.target_class
             self.measurement = None
             self.last_uv = None
-            self.expected = ((goal.expected_position, goal.expected_radius_m)
-                             if goal.expected_position.header.frame_id else None)
+            self.expected = None
         where = ''
-        if self.expected is not None:
+        if goal.expected_position.header.frame_id:
             p = goal.expected_position
             where = (f', 예상 위치 ({p.point.x:.3f}, {p.point.y:.3f}) {p.header.frame_id} '
                      f'반경 {goal.expected_radius_m:.3f} m')
@@ -292,6 +304,20 @@ class AlignNode(Node):
         result = Align.Result()
         k = 0
         try:
+            if goal.expected_position.header.frame_id:
+                # 정렬 시작 시점에 한 번 base_link로 옮겨 둔다 (interfaces.md 4.1).
+                # 첫 검출 전에는 차체를 움직이지 않으므로 이후 프레임과 같은 기준이다.
+                xy = self.expected_in_base(goal.expected_position)
+                if xy is None:
+                    self.publish_cmd(0.0, 0.0)
+                    goal_handle.abort()
+                    result.success = False
+                    result.error_code = TF_ERROR
+                    result.final_range_error_m = result.final_bearing_error_rad = float('nan')
+                    self.get_logger().info(f'정렬 종료: success=False code={TF_ERROR!r}')
+                    return result
+                with self.lock:
+                    self.expected = (xy, goal.expected_radius_m)
             while rclpy.ok() and not self.shutting_down.is_set():
                 if goal_handle.is_cancel_requested:
                     self.publish_cmd(0.0, 0.0)
