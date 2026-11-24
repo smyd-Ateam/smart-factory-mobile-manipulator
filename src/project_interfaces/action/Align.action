@@ -2,6 +2,8 @@
 string target_class        # 정렬할 물체 종류 (YOLO 클래스 이름)
 float64 standoff_m         # 물체 앞에서 멈출 거리 (m)
 float64 timeout_sec        # 제한 시간 (s)
+geometry_msgs/PointStamped expected_position   # 목표 물체 예상 위치. frame_id가 비면 사용 안 함
+float64 expected_radius_m                      # 예상 위치에서 이 반경 안의 검출만 후보 (m)
 ---
 # Result
 bool success
